@@ -23,7 +23,8 @@
 
 - `strategy/playbook.md` (판단 규칙), `strategy/watch.yaml` (예측 대상 유형),
   `strategy/universe_us.txt` (미국 피드 종목), `strategy/tools/` (보조 스크립트),
-  `journal/retros/`, `journal/proposals.md`, `journal/cycles.log`.
+  `journal/retros/`, `journal/proposals.md`, `journal/cycles.log`, `journal/outbox/` (보고서).
+- 알림은 직접 보낼 수 없다 (`core/notify.py` 는 에이전트 실행을 거부한다). 보고는 outbox 파일로만.
 - `strategy/rules_*.yaml` 은 RESEARCH.md 사이클에서만 바꾼다.
 
 ## 질문의 정의
@@ -60,4 +61,26 @@ h거래일째 종가. 기록이 늦을수록 진입도 늦다. 기본 h는 confi
    - 출력에 나오는 기저율과 너의 차이를 확인하되, 기록 후 수정은 불가하다.
 7. **로그**: `journal/cycles.log` 에 한 줄 추가:
    `<UTC ISO> forecast cycle: fed kr N/us M, researched R, recorded F (bets B), settled S, brier_delta X (n=..)`
-8. **커밋**: `git add -A && git commit -m "cycle: <UTC YYYYMMDD-HHMM> recorded F settled S"`
+8. **보고**: 사장님(운영자)께 드리는 보고서를 `journal/outbox/<UTC YYYYMMDD-HHMM>-forecast.md` 에 쓴다.
+   텔레그램으로 그대로 전송된다 (마크다운 기호·표 금지, 평문). 사이클이 끝나면 loop.sh 가 보낸다.
+   누적 성적 숫자는 쓰지 않는다 - core 가 계산한 장부가 자동으로 붙는다.
+   유능한 직원의 보고처럼: 결론 먼저, 짧게, 근거는 한 줄, 모르면 모른다고.
+   ```
+   📊 예측 보고 10/07 16:40 (KST)
+   한 줄 요약: <이번 사이클에서 가장 중요한 것>
+
+   ★ 베팅/주목
+   - <종목>(<코드>) <공시유형>: 지수 초과 확률 <p> (기저 <b>) - <근거 한 줄>
+   (없으면 "베팅 없음 - 이유")
+
+   ✅ 정산
+   - <종목> <유형>: 예측 <p> → 초과수익 <+x.x%> (맞음/틀림, 원인 한 줄)
+
+   🧠 배운 것 / 바꾼 것
+   - <회고에서 바꾼 규칙과 근거, 없으면 생략>
+
+   🙋 확인 부탁 (있을 때만)
+   - <판단에 사장님 정보가 필요한 것, 건의사항>
+   ```
+   전체 25줄 이내. 정산도 기록도 없는 사이클이면 3줄로 "특이사항 없음"과 이유만.
+9. **커밋**: `git add -A && git commit -m "cycle: <UTC YYYYMMDD-HHMM> recorded F settled S"`

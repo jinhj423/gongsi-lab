@@ -13,3 +13,8 @@
 
 ## 절차서
 - `CYCLE.md` 예측 사이클 (매일), `RESEARCH.md` 리서치 사이클 (매주). `loop.sh` 가 실행.
+
+## 상주 운영
+- `core/daemon.py` 가 `config/schedule.json` 대로 `loop.sh`·`core/watch.py` 를 실행하고 텔레그램으로 보고.
+- 에이전트 프로세스는 `LAB_AGENT=1` 로 실행되며 core 가 알림 발송·홀드아웃·데몬 실행을 거부한다.
+- 에이전트의 보고는 `journal/outbox/*.md` 로만. 발송과 장부 숫자는 core 담당.

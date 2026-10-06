@@ -63,8 +63,13 @@ def git_rev() -> str:
         return "nogit"
 
 
+def is_agent() -> bool:
+    """loop.sh sets LAB_AGENT=1 for the headless Claude process."""
+    return os.environ.get("LAB_AGENT") == "1"
+
+
 def is_operator() -> bool:
-    return os.environ.get("LAB_OPERATOR") == "1"
+    return os.environ.get("LAB_OPERATOR") == "1" and not is_agent()
 
 
 def die(msg: str, code: int = 2) -> None:

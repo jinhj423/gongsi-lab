@@ -31,34 +31,40 @@ fi
 command -v claude >/dev/null || { echo "ERROR: claude CLI 가 PATH 에 없습니다" >&2; exit 1; }
 git rev-parse --git-dir >/dev/null 2>&1 || { echo "ERROR: git 저장소가 아닙니다 (git init 먼저)" >&2; exit 1; }
 
-PROTECTED=(core/ config/ CYCLE.md RESEARCH.md loop.sh CLAUDE.md README.md .gitignore tests/)
+PROTECTED=(core/ config/ deploy/ CYCLE.md RESEARCH.md loop.sh CLAUDE.md README.md .gitignore tests/ requirements.txt)
 APPEND_ONLY=(journal/feed.jsonl journal/forecasts.jsonl journal/resolutions.jsonl journal/trials.jsonl journal/holdout-log.jsonl)
 
 holdout_lines() { if [ -f journal/holdout-log.jsonl ]; then wc -l < journal/holdout-log.jsonl; else echo 0; fi; }
+WARNS=()
+warn() { echo "WARNING: $*" >&2; WARNS+=("$*"); }
+FAILED=0
 
 for i in $(seq 1 "$CYCLES"); do
   echo "=== $MODE cycle $i/$CYCLES $(date -u +%FT%TZ) ==="
+  WARNS=()
   BEFORE="$(git rev-parse HEAD 2>/dev/null || echo none)"
   HOLDOUT_BEFORE="$(holdout_lines)"
 
-  claude -p "$(cat "$PROMPT_FILE")" \
+  # LAB_AGENT=1: core 가 이 프로세스를 에이전트로 인식 -> 알림 발송·홀드아웃·데몬 실행 거부
+  if ! LAB_AGENT=1 claude -p "$(cat "$PROMPT_FILE")" \
     --model "${LAB_MODEL:-sonnet}" \
     --max-turns "${LAB_MAX_TURNS:-80}" \
     --permission-mode acceptEdits \
     --allowedTools "Read" "Glob" "Grep" "WebSearch" "WebFetch" "Edit" "Write" \
       "Bash(python3 core/*)" "Bash(git add:*)" "Bash(git commit:*)" "Bash(git status:*)" \
       "Bash(git diff:*)" "Bash(git log:*)" "Bash(git rev-parse:*)" \
-      "Bash(git checkout -- strategy/*)" \
-    || echo "cycle $i 실패; 계속" >&2
+      "Bash(git checkout -- strategy/*)"; then
+    warn "$MODE 사이클이 비정상 종료됨 (사용량 한도·네트워크·턴 상한 확인)"
+    FAILED=1
+  fi
 
   # 1) 보호 경로: 작업트리 변경 되돌리기 + 이번 사이클 커밋에 섞였는지 검사
   if ! git diff --quiet HEAD -- "${PROTECTED[@]}" 2>/dev/null; then
-    echo "WARNING: 에이전트가 보호 파일을 수정 -> 되돌림" >&2
+    warn "에이전트가 보호 파일을 수정 -> 되돌림"
     git checkout HEAD -- "${PROTECTED[@]}"
   fi
   if [ "$BEFORE" != "none" ] && [ -n "$(git diff --name-only "$BEFORE" HEAD -- "${PROTECTED[@]}")" ]; then
-    echo "WARNING: 이번 사이클 커밋이 보호 파일을 건드림 -> 사이클 이전 상태로 복원 커밋:" >&2
-    git diff --stat "$BEFORE" HEAD -- "${PROTECTED[@]}" >&2
+    warn "사이클 커밋이 보호 파일을 건드림 -> 복원 커밋: $(git diff --name-only "$BEFORE" HEAD -- "${PROTECTED[@]}" | tr '\n' ' ')"
     for p in "${PROTECTED[@]}"; do
       if git cat-file -e "$BEFORE:$p" 2>/dev/null; then git checkout "$BEFORE" -- "$p"; else git rm -rq --ignore-unmatch -- "$p"; fi
     done
@@ -68,17 +74,28 @@ for i in $(seq 1 "$CYCLES"); do
   if [ "$BEFORE" != "none" ]; then
     for f in "${APPEND_ONLY[@]}"; do
       DEL="$(git diff --numstat "$BEFORE" HEAD -- "$f" | awk '{s+=$2} END {print s+0}')"
-      if [ "$DEL" -gt 0 ]; then echo "WARNING: $f 에서 ${DEL}줄 삭제됨 - 원장 변조 의심" >&2; fi
+      if [ "$DEL" -gt 0 ]; then warn "$f 에서 ${DEL}줄 삭제됨 - 원장 변조 의심"; fi
     done
   fi
   # 3) 홀드아웃 접근
   HOLDOUT_AFTER="$(holdout_lines)"
-  if [ "$HOLDOUT_AFTER" != "$HOLDOUT_BEFORE" ]; then echo "WARNING: 사이클 중 홀드아웃 실행 기록이 늘었음" >&2; fi
+  if [ "$HOLDOUT_AFTER" != "$HOLDOUT_BEFORE" ]; then warn "사이클 중 홀드아웃 실행 기록이 늘었음"; fi
   # 4) 무결성
-  python3 core/validate.py >/dev/null || echo "WARNING: core/validate.py 실패" >&2
+  python3 core/validate.py >/dev/null || warn "core/validate.py 실패"
+
+  # 5) 보고: 에이전트가 journal/outbox/ 에 쓴 보고서 발송 (+ core 계산 장부 꼬리말)
+  python3 core/notify.py send-outbox >/dev/null || warn "보고서 발송 실패"
+  if [ ${#WARNS[@]} -gt 0 ]; then
+    python3 core/notify.py text "⚠️ [$MODE] 운영 경고
+$(printf -- '- %s\n' "${WARNS[@]}")" >/dev/null || true
+  fi
+  if [ -n "$(git status --porcelain -- journal/outbox)" ]; then
+    git add journal/outbox && git commit -qm "operator: reports sent" || true
+  fi
 
   if [ "${LAB_PUSH:-0}" = "1" ] && git remote get-url origin >/dev/null 2>&1; then
     git push origin HEAD:main || echo "WARNING: push 실패" >&2
   fi
   if [ "$i" -lt "$CYCLES" ]; then sleep $((SLEEP_MIN * 60)); fi
 done
+exit "$FAILED"

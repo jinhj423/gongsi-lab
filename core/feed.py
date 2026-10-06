@@ -26,10 +26,10 @@ def watch() -> dict:
     return yaml.safe_load((STRATEGY / "watch.yaml").read_text(encoding="utf-8")) or {}
 
 
-def pull_kr(days: int) -> int:
+def pull_kr(days: int) -> list[dict]:
     today = dt.datetime.now(MARKETS["kr"]["tz"]).date()
     have = ledger.feed_events()
-    n = 0
+    new: list[dict] = []
     for k in range(days):
         d = today - dt.timedelta(days=k)
         if d.weekday() >= 5:
@@ -39,17 +39,18 @@ def pull_kr(days: int) -> int:
             if ev and ev["event_id"] not in have:
                 append_jsonl(ledger.FEED, ev)
                 have[ev["event_id"]] = ev
-                n += 1
-    return n
+                new.append(ev)
+    return new
 
 
-def pull_us(days: int) -> int:
+def pull_us(days: int, extra: list[str] | None = None) -> list[dict]:
     since = (dt.datetime.now(MARKETS["us"]["tz"]).date() - dt.timedelta(days=days)).isoformat()
     tickers = [ln.split("#")[0].strip() for ln in (STRATEGY / "universe_us.txt").read_text(encoding="utf-8").splitlines()]
+    tickers = list(dict.fromkeys([t.upper() for t in tickers if t] + [t.upper() for t in (extra or [])]))
     tmap = sources.sec_ticker_map()
     have = ledger.feed_events()
-    n = 0
-    for t in [t for t in tickers if t]:
+    new: list[dict] = []
+    for t in tickers:
         info = tmap.get(t.upper().replace(".", "-")) or tmap.get(t.upper())
         if not info:
             print(f"{t}: CIK 없음", file=sys.stderr)
@@ -64,8 +65,8 @@ def pull_us(days: int) -> int:
                 ev["name"] = info["title"]
                 append_jsonl(ledger.FEED, ev)
                 have[ev["event_id"]] = ev
-                n += 1
-    return n
+                new.append(ev)
+    return new
 
 
 def candidates(offline: bool) -> list[dict]:
@@ -99,9 +100,9 @@ def main() -> None:
     ap.add_argument("--offline", action="store_true")
     a = ap.parse_args()
     if a.what == "kr":
-        out({"new_events": pull_kr(a.days or 1)})
+        out({"new_events": len(pull_kr(a.days or 1))})
     elif a.what == "us":
-        out({"new_events": pull_us(a.days or 3)})
+        out({"new_events": len(pull_us(a.days or 3))})
     else:
         c = candidates(a.offline)
         lim = int(watch().get("max_candidates_per_cycle", 10))

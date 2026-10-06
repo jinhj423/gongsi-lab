@@ -41,4 +41,20 @@
    등 core 변경이 필요한 것은 `journal/proposals.md` 에 증거와 함께 적는다.
 8. 로그 한 줄 `journal/cycles.log`:
    `<UTC ISO> research cycle: kr <채택|기각|무변경> ..., us ..., backtests used N`
-9. 커밋: `git add -A && git commit -m "research: <한 줄 요약>"`
+9. **주간 보고**: `journal/outbox/<UTC YYYYMMDD-HHMM>-research.md` (평문, 30줄 이내). 텔레그램으로 전송되며
+   최근 7일 전략 변경(git)과 장부가 자동으로 붙는다.
+   ```
+   🔬 주간 리서치 보고 10/11
+   결론: <이번 주 가장 중요한 발견 한 줄>
+
+   이번 주 시험한 가설
+   - KR: <가설> → 채택/기각 (<기준 대비 결과 한 줄>)
+   - US: ...
+
+   이벤트 스터디에서 눈에 띈 것
+   - <유형>: 평균 초과수익 <x%>, t=<t>, 연도별 <일관/불안정>
+
+   다음 주 계획 / 확인 부탁
+   - ...
+   ```
+10. 커밋: `git add -A && git commit -m "research: <한 줄 요약>"`

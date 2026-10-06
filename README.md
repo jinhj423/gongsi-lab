@@ -46,7 +46,7 @@ echo "Hong Gildong you@example.com" > ~/.config/gongsi-lab/sec-user-agent
 LAB_DATA=demo-data python3 core/demo.py                      # 가상 종목/공시 생성 (일부 유형에 드리프트 심어둠)
 LAB_DATA=demo-data python3 core/eventstudy.py --market kr --by-year
 LAB_DATA=demo-data python3 core/backtest.py --market kr --trades
-python3 tests/run_tests.py                                   # 룩어헤드·원장 테스트
+python3 tests/run_tests.py && python3 tests/test_daemon.py  # 룩어헤드·원장·데몬·보고 테스트
 ```
 데모를 돌리면 `journal/trials.jsonl`, `journal/baselines.json` 이 생긴다. 실제 데이터로 시작하기 전에 지울 것.
 
@@ -92,6 +92,52 @@ LAB_MODEL=opus ./loop.sh forecast    # 모델 변경 (기본 sonnet, Pro 사용�
 - 분기 1회 홀드아웃 확인: `LAB_OPERATOR=1 python3 core/backtest.py --market kr --holdout`
   - 인샘플에서 좋았던 규칙이 홀드아웃에서 무너지면 과최적화. 이때 `holdout_start` 를 옮겨 새 홀드아웃을 잡는다.
 - `config/protected.json`: 비용 가정(세율 확인), 지평, 페이퍼 캡, 홀드아웃 날짜. 수정 커밋은 `operator:` 로 시작.
+
+## 5. 상주 직원 모드: 계속 일하고 텔레그램으로 보고
+
+`core/daemon.py` 를 켜두면 일정대로 일하고 보고한다. PC(또는 WSL/서버)가 켜져 있어야 한다.
+
+| 시각 (KST) | 하는 일 | LLM 사용 |
+|---|---|---|
+| 평일 08:20 | 출근 상태 보고 (마지막 사이클, 장부, 건의사항 수) | X |
+| 평일 07:30~19:00, 20분마다 | 관심종목 공시 감시 → 즉시 알림 | X |
+| 매일 1시간마다 | 미국 관심종목 8-K 감시 | X |
+| 평일 16:30 | 예측 사이클 (국내 장 마감 후) → 예측 보고 | O |
+| 화~토 07:30 | 예측 사이클 (미국 장 마감 후) → 예측 보고 | O |
+| 토 10:00 | 리서치 사이클 → 주간 리서치 보고 (+ 이번 주 전략 변경 git 기록) | O |
+
+일정은 `config/schedule.json`, 관심종목은 `config/my_watchlist.txt` 에서 바꾼다.
+PC가 꺼져 있다 켜지면 8시간 이내에 놓친 정기 작업은 따라잡는다.
+
+**텔레그램 설정** (한 번):
+1. 텔레그램 @BotFather → `/newbot` → 토큰 받기. 그룹 토픽에 넣을 거면 봇을 그룹에 초대하고
+   BotFather `/setprivacy` → Disable.
+2. `~/.config/gongsi-lab/telegram.json` 에 `{"token": "..."}` 만 넣고, 보고받을 방(토픽)에서 봇에게 아무 말이나 보낸 뒤
+   `python3 core/notify.py whoami` → 나온 chat_id, thread_id, user_id 로 파일 완성:
+   ```json
+   {"token": "123:ABC", "chat_id": -1001234567890, "thread_id": 42, "allowed_user_ids": [11111111]}
+   ```
+3. `python3 core/notify.py test` 로 확인.
+
+**실행**:
+```bash
+python3 core/daemon.py                 # 포그라운드 (테스트)
+# Linux/WSL(systemd): deploy/gongsi-lab.service 안의 안내대로
+# Windows: deploy/start-daemon-wsl.bat 을 작업 스케줄러 "로그온할 때" 로 등록
+python3 core/daemon.py once forecast   # 지금 바로 한 번
+```
+
+**텔레그램으로 지시하기** (allowed_user_ids 만):
+- `/status` 현재 상태와 장부 · `/run forecast|research|watch` 즉시 실행
+- `/note 이번 주 2차전지 공시는 보수적으로` → 운영자 노트에 기록, 다음 사이클 직원이 읽고 반영
+- `/pause` / `/resume` 정기 작업 일시정지·재개
+
+**보고 내용이 정직한 이유**: 직원(에이전트)은 텔레그램을 직접 못 쓴다. `journal/outbox/` 에 보고서를
+쓰면 사이클이 끝난 뒤 core 가 보내고, 누적 성적(brier_delta, 페이퍼 손익)은 core 가 직접 계산해서 꼬리말로 붙인다.
+보호 파일 수정·원장 삭제·사이클 실패는 별도 "⚠️ 운영 경고"로 온다. 같은 작업이 계속 실패하면 1·3·10회째에만 알린다.
+
+**사용량**: 예측 사이클 하루 2회 + 리서치 주 1회 (기본 sonnet, 사이클당 최대 80턴). 공시 감시는 LLM 을 쓰지 않는다.
+Pro 한도에 걸리면 사이클이 실패로 보고되니 `LAB_MAX_TURNS` 를 줄이거나 오후 사이클만 남기면 된다.
 
 ## 성적 보기
 
