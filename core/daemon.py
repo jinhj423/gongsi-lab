@@ -29,7 +29,39 @@ import notify
 
 STATE_P = DATA / "daemon-state.json"
 PAUSE_P = DATA / "PAUSED"
+LOG_P = DATA / "daemon.log"
 _lock = threading.Lock()
+_restart = threading.Event()
+
+
+def log(msg: str) -> None:
+    line = f"{dt.datetime.now():%Y-%m-%d %H:%M:%S} {msg}"
+    print(line, flush=True)
+    try:
+        LOG_P.parent.mkdir(parents=True, exist_ok=True)
+        if LOG_P.exists() and LOG_P.stat().st_size > 5_000_000:
+            LOG_P.replace(LOG_P.with_suffix(".log.1"))
+        with LOG_P.open("a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
+
+
+def tail_file(p, n: int) -> str:
+    if not p or not p.exists():
+        return "(없음)"
+    return "\n".join(p.read_text(encoding="utf-8", errors="replace").splitlines()[-n:])
+
+
+def token_days_left() -> int | None:
+    """CLAUDE_TOKEN_CREATED=YYYY-MM-DD (setup-token 발급일) 기준 1년 만료까지 남은 일수."""
+    c = os.environ.get("CLAUDE_TOKEN_CREATED")
+    if not c:
+        return None
+    try:
+        return 365 - (dt.date.today() - dt.date.fromisoformat(c)).days
+    except ValueError:
+        return None
 
 
 def schedule() -> dict:
@@ -86,11 +118,14 @@ def status_text() -> str:
             ago = (dt.datetime.now(dt.timezone.utc) - t).total_seconds() / 3600
             lines.append(f"마지막 사이클 {ago:.0f}시간 전: {last[len(last.split()[0]) + 1:][:160]}")
             if ago > 36:
-                lines.append("⚠️ 36시간 넘게 사이클이 없습니다 - PC/데몬/키를 확인하세요")
+                lines.append("⚠️ 36시간 넘게 사이클이 없습니다 - 서버/데몬/키를 확인하세요 (/log)")
         except ValueError:
             lines.append(f"마지막 로그: {last[:160]}")
     else:
         lines.append("아직 사이클 기록 없음")
+    days = token_days_left()
+    if days is not None and days <= 30:
+        lines.append(f"🔑 Claude 토큰 만료 {days}일 전 - PC에서 claude setup-token 재발급 후 서버 env 교체")
     st = load_state()
     for j in schedule()["jobs"]:
         if "at" in j:
@@ -154,7 +189,7 @@ class Worker(threading.Thread):
                     f["count"] += 1
                 save_state(st)
                 self.pending.discard(name)
-            print(f"[daemon] {name} {'ok' if ok else 'FAIL'}", flush=True)
+            log(f"{name} {'ok' if ok else 'FAIL'}")
             if not ok and (f["count"] in (1, 3) or f["count"] % 10 == 0):  # 같은 실패로 도배하지 않기
                 notify.send(f"⚠️ 작업 실패: {name} (연속 {f['count']}회)\n{tail[-1200:]}")
             elif ok and f.get("was_failing"):
@@ -167,8 +202,28 @@ class Worker(threading.Thread):
 
 # ---------------------------------------------------------------- telegram commands
 
-HELP = ("명령: /status · /note <메모> · /run forecast|research|watch · /pause · /resume\n"
-        "메모는 journal/operator-notes.md 에 기록되어 다음 사이클 직원이 읽습니다.")
+HELP = ("명령: /status · /note <메모> · /run forecast|research|watch · /pause · /resume · /log · /update\n"
+        "메모는 journal/operator-notes.md 에 기록되어 다음 사이클 직원이 읽습니다.\n"
+        "/update 는 GitHub 의 최신 코드를 받아 데몬을 재시작합니다 (작업 중이면 보류).")
+
+
+def latest_cycle_log():
+    d = DATA / "logs"
+    files = sorted(d.glob("cycle-*.log")) if d.exists() else []
+    return files[-1] if files else None
+
+
+def git_update() -> tuple[bool, str]:
+    def g(*a):
+        return subprocess.run(["git", *a], cwd=ROOT, capture_output=True, text=True)
+    before = g("rev-parse", "HEAD").stdout.strip()
+    p = g("pull", "--rebase", "origin", "main")
+    if p.returncode != 0:
+        g("rebase", "--abort")
+        return False, (p.stdout + p.stderr)[-800:]
+    after = g("rev-parse", "HEAD").stdout.strip()
+    changed = g("diff", "--name-only", before, after).stdout.split()
+    return before != after, "변경 파일: " + (", ".join(changed[:15]) or "없음")
 
 
 def add_note(text: str) -> None:
@@ -212,6 +267,18 @@ def handle_command(text: str, worker: Worker) -> str:
     if cmd == "/resume":
         PAUSE_P.unlink(missing_ok=True)
         return "▶️ 정기 작업 재개"
+    if cmd == "/log":
+        cl = latest_cycle_log()
+        return (f"📜 데몬 로그\n{tail_file(LOG_P, 12)}\n\n📜 최근 사이클 ({cl.name if cl else '-'})\n"
+                f"{tail_file(cl, 15)}")
+    if cmd == "/update":
+        if worker.pending:
+            return f"작업 중이라 보류: {', '.join(sorted(worker.pending))}. 끝난 뒤 다시 /update"
+        changed, msg = git_update()
+        if changed:
+            _restart.set()
+            return f"⬆️ 업데이트 완료, 재시작합니다.\n{msg}"
+        return f"업데이트 없음 또는 실패\n{msg}"
     if cmd in ("/help", "/start"):
         return HELP
     return ""
@@ -227,7 +294,7 @@ def poll_telegram(worker: Worker) -> None:
         j = notify._api("getUpdates", {"offset": st.get("tg_offset", 0), "timeout": 25,
                                        "allowed_updates": ["message"]})
     except Exception as e:  # noqa: BLE001
-        print(f"[daemon] getUpdates: {e}", flush=True)
+        log(f"getUpdates: {e}")
         time.sleep(15)
         return
     allowed = set(c.get("allowed_user_ids", []))
@@ -295,13 +362,25 @@ def main() -> None:
     pid_p.write_text(str(os.getpid()))
     worker = Worker()
     worker.start()
-    notify.send("🟢 출근했습니다. 일정대로 공시 감시·예측·리서치를 시작합니다. /help", silent=True)
+    import socket
+    notify.send(f"🟢 출근했습니다 ({socket.gethostname()}). 일정대로 공시 감시·예측·리서치를 시작합니다. /help",
+                silent=True)
+    log("daemon started")
     tz = ZoneInfo(schedule()["timezone"])
+    last_ping = 0.0
     try:
-        while True:
+        while not _restart.is_set():
             for name in tick(worker, dt.datetime.now(tz)):
-                print(f"[daemon] queued {name}", flush=True)
+                log(f"queued {name}")
+            if os.environ.get("HEALTHCHECK_URL") and time.time() - last_ping > 600:
+                last_ping = time.time()
+                try:
+                    import requests
+                    requests.get(os.environ["HEALTHCHECK_URL"], timeout=10)
+                except Exception as e:  # noqa: BLE001
+                    log(f"healthcheck ping 실패: {e}")
             poll_telegram(worker)  # 최대 25초 대기 (long poll) 또는 30초 sleep
+        log("restart requested (/update)")
     except KeyboardInterrupt:
         pass
     finally:

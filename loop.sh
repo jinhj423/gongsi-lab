@@ -45,6 +45,11 @@ for i in $(seq 1 "$CYCLES"); do
   BEFORE="$(git rev-parse HEAD 2>/dev/null || echo none)"
   HOLDOUT_BEFORE="$(holdout_lines)"
 
+  # 사이클 출력은 $LAB_DATA/logs/ 에 남긴다 (텔레그램 /log 로 확인). 최근 60개만 보관.
+  LOGDIR="${LAB_DATA:-data}/logs"; mkdir -p "$LOGDIR"
+  CYCLE_LOG="$LOGDIR/cycle-$(date -u +%Y%m%d-%H%M%S)-$MODE.log"
+  find "$LOGDIR" -maxdepth 1 -name "cycle-*.log" -printf "%T@ %p\n" | sort -rn | tail -n +61 | cut -d" " -f2- | xargs -r rm -f
+
   # LAB_AGENT=1: core 가 이 프로세스를 에이전트로 인식 -> 알림 발송·홀드아웃·데몬 실행 거부
   if ! LAB_AGENT=1 claude -p "$(cat "$PROMPT_FILE")" \
     --model "${LAB_MODEL:-sonnet}" \
@@ -53,8 +58,14 @@ for i in $(seq 1 "$CYCLES"); do
     --allowedTools "Read" "Glob" "Grep" "WebSearch" "WebFetch" "Edit" "Write" \
       "Bash(python3 core/*)" "Bash(git add:*)" "Bash(git commit:*)" "Bash(git status:*)" \
       "Bash(git diff:*)" "Bash(git log:*)" "Bash(git rev-parse:*)" \
-      "Bash(git checkout -- strategy/*)"; then
-    warn "$MODE 사이클이 비정상 종료됨 (사용량 한도·네트워크·턴 상한 확인)"
+      "Bash(git checkout -- strategy/*)" 2>&1 | tee "$CYCLE_LOG"; then
+    if tail -n 40 "$CYCLE_LOG" | grep -qiE "login expired|invalid api key|oauth token|authentication_error|401|not logged in|/login"; then
+      warn "Claude 인증 실패/만료로 보임 - PC에서 'claude setup-token' 재발급 후 서버 ~/.config/gongsi-lab/env 의 CLAUDE_CODE_OAUTH_TOKEN 교체"
+    elif tail -n 40 "$CYCLE_LOG" | grep -qiE "usage limit|rate limit|limit reached|429"; then
+      warn "Claude 사용량 한도에 걸림 - 한도가 풀리면 다음 정기 사이클에서 재개"
+    else
+      warn "$MODE 사이클이 비정상 종료됨 (텔레그램 /log 로 확인)"
+    fi
     FAILED=1
   fi
 
@@ -93,8 +104,17 @@ $(printf -- '- %s\n' "${WARNS[@]}")" >/dev/null || true
     git add journal/outbox && git commit -qm "operator: reports sent" || true
   fi
 
+  # 6) 백업: GitHub 등 원격 저장소로 push (서버가 사라져도 원장·전략 기록 보존)
   if [ "${LAB_PUSH:-0}" = "1" ] && git remote get-url origin >/dev/null 2>&1; then
-    git push origin HEAD:main || echo "WARNING: push 실패" >&2
+    if ! git push -q origin HEAD:main 2>/dev/null; then
+      # PC에서 운영자가 먼저 push 한 경우: 그 위에 다시 쌓고 재시도. 충돌이면 손대지 않고 알림.
+      if git pull -q --rebase origin main && git push -q origin HEAD:main; then
+        :
+      else
+        git rebase --abort 2>/dev/null || true
+        python3 core/notify.py text "⚠️ GitHub push 실패 (충돌). 서버에서 git status 확인 필요" >/dev/null || true
+      fi
+    fi
   fi
   if [ "$i" -lt "$CYCLES" ]; then sleep $((SLEEP_MIN * 60)); fi
 done

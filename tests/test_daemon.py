@@ -131,6 +131,55 @@ git add -A && git commit -qm "cycle: test"
     assert "journal/outbox" not in st, st
     print("loop reporting ok")
 
+    # ---- server ops: cycle log, auth-failure alert, push retry on diverged remote, /log, /update
+    assert list((data / "logs").glob("cycle-*-forecast.log")), "cycle log not written"
+    remote = tmp / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
+    subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=root, check=True)
+    subprocess.run(["git", "push", "-q", "origin", "main"], cwd=root, check=True)
+    pc = tmp / "pc"  # the operator's PC clone
+    subprocess.run(["git", "clone", "-q", str(remote), str(pc)], check=True)
+    for k, v in (("user.email", "pc@pc"), ("user.name", "pc")):
+        subprocess.run(["git", "config", k, v], cwd=pc, check=True)
+    (pc / "config" / "my_watchlist.txt").write_text("kr 005930 삼성전자\nkr 035420 NAVER\n", encoding="utf-8")
+    subprocess.run(["git", "commit", "-qam", "operator: add NAVER"], cwd=pc, check=True)
+    subprocess.run(["git", "push", "-q", "origin", "main"], cwd=pc, check=True)
+    (bindir / "claude").write_text("""#!/usr/bin/env bash
+mkdir -p journal/retros && echo r > journal/retros/R1.md && git add -A && git commit -qm "cycle: r"
+echo "API Error: 401 authentication_error · Login expired · Please run /login"
+exit 1
+""", encoding="utf-8")
+    before = dry.read_text(encoding="utf-8")
+    p = subprocess.run(["bash", "loop.sh", "forecast"], cwd=root,
+                       env={**env, "PATH": f"{bindir}:{env['PATH']}", "LAB_PUSH": "1"}, capture_output=True, text=True)
+    assert p.returncode == 1
+    sent = dry.read_text(encoding="utf-8")[len(before):]
+    assert "setup-token" in sent, sent
+    head_remote = subprocess.run(["git", "--git-dir", str(remote), "log", "--oneline", "-3"], capture_output=True, text=True).stdout
+    assert "cycle: r" in head_remote and "add NAVER" in head_remote, head_remote  # rebased onto PC push, then pushed
+    print("auth alert + push retry ok")
+
+    w2 = daemon.Worker()
+    assert "데몬 로그" in daemon.handle_command("/log", w2) and "최근 사이클" in daemon.handle_command("/log", w2)
+    (pc / "config" / "schedule.json").write_text(
+        (pc / "config" / "schedule.json").read_text(encoding="utf-8").replace('"16:30"', '"16:40"'), encoding="utf-8")
+    subprocess.run(["git", "commit", "-qam", "operator: move forecast to 16:40"], cwd=pc, check=True)
+    subprocess.run(["git", "pull", "-q", "--rebase", "origin", "main"], cwd=pc, check=True)
+    subprocess.run(["git", "push", "-q", "origin", "main"], cwd=pc, check=True)
+    w2.pending.add("forecast-kr")
+    assert "보류" in daemon.handle_command("/update", w2)
+    w2.pending.clear()
+    r = daemon.handle_command("/update", w2)
+    assert "재시작" in r and "schedule.json" in r and daemon._restart.is_set(), r
+    assert '"16:40"' in (root / "config" / "schedule.json").read_text(encoding="utf-8")
+    daemon._restart.clear()
+    assert "업데이트 없음" in daemon.handle_command("/update", w2)
+    os.environ["CLAUDE_TOKEN_CREATED"] = (dt.date.today() - dt.timedelta(days=350)).isoformat()
+    assert "만료 15일 전" in daemon.status_text()
+    os.environ["CLAUDE_TOKEN_CREATED"] = dt.date.today().isoformat()
+    assert "토큰" not in daemon.status_text()
+    print("server ops ok")
+
     shutil.rmtree(tmp)
     print("ALL DAEMON TESTS PASSED")
 

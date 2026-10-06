@@ -95,7 +95,7 @@ LAB_MODEL=opus ./loop.sh forecast    # 모델 변경 (기본 sonnet, Pro 사용�
 
 ## 5. 상주 직원 모드: 계속 일하고 텔레그램으로 보고
 
-`core/daemon.py` 를 켜두면 일정대로 일하고 보고한다. PC(또는 WSL/서버)가 켜져 있어야 한다.
+`core/daemon.py` 를 켜두면 일정대로 일하고 보고한다. 24시간 운영은 서버를 권장 (6번).
 
 | 시각 (KST) | 하는 일 | LLM 사용 |
 |---|---|---|
@@ -122,7 +122,7 @@ PC가 꺼져 있다 켜지면 8시간 이내에 놓친 정기 작업은 따라�
 **실행**:
 ```bash
 python3 core/daemon.py                 # 포그라운드 (테스트)
-# Linux/WSL(systemd): deploy/gongsi-lab.service 안의 안내대로
+# 서버: 6번 참고 (deploy/server-setup.sh 가 systemd 서비스까지 등록)
 # Windows: deploy/start-daemon-wsl.bat 을 작업 스케줄러 "로그온할 때" 로 등록
 python3 core/daemon.py once forecast   # 지금 바로 한 번
 ```
@@ -138,6 +138,49 @@ python3 core/daemon.py once forecast   # 지금 바로 한 번
 
 **사용량**: 예측 사이클 하루 2회 + 리서치 주 1회 (기본 sonnet, 사이클당 최대 80턴). 공시 감시는 LLM 을 쓰지 않는다.
 Pro 한도에 걸리면 사이클이 실패로 보고되니 `LAB_MAX_TURNS` 를 줄이거나 오후 사이클만 남기면 된다.
+
+## 6. 서버에서 24시간 (PC 꺼도 됨)
+
+**서버 고르기** (Claude Code 는 RAM 4GB 이상 권장, ARM64 지원):
+
+| 선택지 | 비용 | 메모 |
+|---|---|---|
+| Oracle Cloud Always Free (Ampere A1 ARM) | 무료 | 2026년 중반부터 무료 한도 2코어/12GB. 춘천·서울 리전. 무료 계정은 오래 놀고 있는 인스턴스를 회수할 수 있으니 종량제(PAYG)로 업그레이드 권장 (무료 한도 안이면 과금 없음). |
+| 저가 VPS (4GB RAM, 국내/일본 리전) | 월 1만원 안팎 | 가입·용량 문제 없이 바로 됨 |
+
+어느 쪽이든 Ubuntu 24.04 를 고른다. 이 시스템은 대부분 시간 대기 상태라 CPU 는 거의 안 쓴다.
+
+**설치** (PC 에서 한 번):
+```bash
+# 0) GitHub 에 비공개 저장소 gongsi-lab 생성 (백업·코드 배포용)
+git remote add origin git@github.com:<you>/gongsi-lab.git && git push -u origin main
+claude setup-token                       # Pro 구독용 1년짜리 토큰 출력 -> 복사해 둠
+
+# 1) 서버로 복사
+scp -r ~/gongsi-lab ubuntu@<서버IP>:~/
+scp ~/.config/gongsi-lab/telegram.json ubuntu@<서버IP>:~/
+```
+서버에서:
+```bash
+mkdir -p ~/.config/gongsi-lab && mv ~/telegram.json ~/.config/gongsi-lab/
+cd ~/gongsi-lab && bash deploy/server-setup.sh   # 패키지, 스왑, venv, Claude Code, 배포키, systemd
+nano ~/.config/gongsi-lab/env                    # 토큰, DART 키, SEC 이름/이메일
+# 출력된 배포키를 GitHub 저장소 Settings -> Deploy keys 에 등록 (Allow write access)
+bash deploy/server-setup.sh check                # 인증·DART·SEC·가격·텔레그램·GitHub 점검
+# 과거 데이터 수집 (setup 마지막 안내대로 tmux 에서) 후
+systemctl --user enable --now gongsi-lab         # 시작. 재부팅해도 자동 시작
+```
+
+**원격 운영 (텔레그램)**:
+- `/log` 데몬 로그와 최근 사이클 출력 꼬리
+- `/update` PC 에서 코드를 고쳐 GitHub 에 push 한 뒤 보내면, 서버가 받아서 데몬을 재시작 (작업 중이면 보류)
+- 서버가 사이클마다 원장·전략을 GitHub 에 push → PC 에서 `git pull` 하면 직원이 한 일이 그대로 보인다
+- Claude 토큰은 1년짜리. 만료 30일 전부터 아침 보고에 경고가 뜬다. 인증이 실패하면 사이클 경고로 "토큰 재발급"이라고 알려준다
+- 서버 자체가 죽으면 데몬도 알릴 수 없다. healthchecks.io 무료 체크를 만들어 `HEALTHCHECK_URL` 에 넣으면
+  10분마다 핑을 보내고, 끊기면 healthchecks.io 가 메일/텔레그램으로 알린다
+
+Anthropic 클라우드의 예약 작업으로 돌리지 않는 이유: 그쪽 실행 환경은 외부 접속이 허용 목록으로 제한돼
+DART·SEC·가격 사이트에 직접 붙지 못한다. 그래서 내 서버에서 Claude Code 를 돌린다.
 
 ## 성적 보기
 
