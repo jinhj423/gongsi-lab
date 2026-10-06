@@ -47,6 +47,9 @@ PY
   python3 -c "import yfinance as y; print('US', len(y.Ticker('SPY').history(period='1mo')), 'rows')" || ok=0
   say "Telegram"
   (cd "$REPO" && python3 core/notify.py test) || ok=0
+  say "옵시디언 보관함"
+  (cd "$REPO" && python3 core/vault.py status)
+  [ -n "${VAULT_DIR:-}" ] && (cd "$REPO" && python3 core/vault.py export) || echo "VAULT_DIR 비어 있음 (옵시디언 안 쓸 거면 무시)"
   say "GitHub 백업"
   if git -C "$REPO" remote get-url origin >/dev/null 2>&1; then
     git -C "$REPO" ls-remote -q origin >/dev/null && echo "origin 접근 OK" || { echo "origin 접근 실패 (배포키 등록 확인)"; ok=0; }
@@ -80,6 +83,16 @@ if ! command -v claude >/dev/null && [ ! -x "$HOME/.local/bin/claude" ]; then
 fi
 "$HOME/.local/bin/claude" --version 2>/dev/null || claude --version
 
+say "Obsidian Headless (옵시디언 동기화, Node.js 22+ 필요)"
+NODE_MAJOR=$(node -v 2>/dev/null | sed 's/^v\([0-9]*\).*/\1/' || echo 0)
+if [ "${NODE_MAJOR:-0}" -lt 22 ]; then
+  curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - >/dev/null
+  sudo apt-get install -y -qq nodejs >/dev/null
+fi
+node -v
+command -v ob >/dev/null || [ -x "$HOME/.local/bin/ob" ] || npm install -g --prefix "$HOME/.local" obsidian-headless >/dev/null
+"$HOME/.local/bin/ob" --version 2>/dev/null || ob --version 2>/dev/null || echo "ob 설치 확인 필요"
+
 say "비밀값 파일 $ENVF"
 mkdir -p "$CONF" && chmod 700 "$CONF"
 if [ ! -f "$ENVF" ]; then
@@ -96,6 +109,8 @@ LAB_MODEL=sonnet
 LAB_MAX_TURNS=80
 # 선택: healthchecks.io 무료 체크 URL (서버가 죽으면 그쪽에서 알림)
 HEALTHCHECK_URL=
+# 선택: 옵시디언 보관함 로컬 경로 (README 7번). 값이 있으면 옵시디언 내보내기가 켜진다.
+VAULT_DIR=
 EOF
   chmod 600 "$ENVF"
   echo "템플릿 생성 -> nano $ENVF 로 채우세요"
@@ -156,6 +171,7 @@ cat <<EOF
        python3 core/ingest.py kr --from 2018-01-01 && python3 core/ingest.py prices kr
        python3 core/ingest.py us --tickers-file strategy/universe_us.txt --from 2018-01-01 && python3 core/ingest.py prices us
        python3 core/eventstudy.py --market kr && python3 core/eventstudy.py --market us   # 기저율
-  5) systemctl --user enable --now gongsi-lab
+  5) (선택) 옵시디언 연결: README 7번 - ob login -> ob sync-setup -> env 에 VAULT_DIR 지정
+  6) systemctl --user enable --now gongsi-lab
      journalctl --user -u gongsi-lab -f        # 로그 (텔레그램에서는 /log)
 EOF

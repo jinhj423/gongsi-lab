@@ -148,6 +148,8 @@ def run_job(run: str, timeout_min: int) -> tuple[bool, str]:
         cmd = ["bash", str(ROOT / "loop.sh"), parts[0]]
     elif parts[0] == "watch":
         cmd = [sys.executable, str(ROOT / "core" / "watch.py"), parts[1]]
+    elif parts[0] == "vault":
+        cmd = [sys.executable, str(ROOT / "core" / "vault.py"), "export"]
     elif parts[0] == "status":
         return notify.send(status_text(), silent=True), ""
     else:
@@ -191,9 +193,9 @@ class Worker(threading.Thread):
                 self.pending.discard(name)
             log(f"{name} {'ok' if ok else 'FAIL'}")
             if not ok and (f["count"] in (1, 3) or f["count"] % 10 == 0):  # 같은 실패로 도배하지 않기
-                notify.send(f"⚠️ 작업 실패: {name} (연속 {f['count']}회)\n{tail[-1200:]}")
+                notify.send(f"⚠️ 작업 실패: {name} (연속 {f['count']}회)\n{tail[-1200:]}", kind="ops")
             elif ok and f.get("was_failing"):
-                notify.send(f"✅ {name} 복구됨", silent=True)
+                notify.send(f"✅ {name} 복구됨", silent=True, kind="ops")
             with _lock:
                 st = load_state()
                 st["fail"].setdefault(name, {})["was_failing"] = not ok
@@ -202,7 +204,7 @@ class Worker(threading.Thread):
 
 # ---------------------------------------------------------------- telegram commands
 
-HELP = ("명령: /status · /note <메모> · /run forecast|research|watch · /pause · /resume · /log · /update\n"
+HELP = ("명령: /status · /note <메모> · /run forecast|research|watch|vault · /pause · /resume · /log · /update\n"
         "메모는 journal/operator-notes.md 에 기록되어 다음 사이클 직원이 읽습니다.\n"
         "/update 는 GitHub 의 최신 코드를 받아 데몬을 재시작합니다 (작업 중이면 보류).")
 
@@ -257,8 +259,11 @@ def handle_command(text: str, worker: Worker) -> str:
             worker.submit("manual-watch-kr", "watch kr")
             worker.submit("manual-watch-us", "watch us")
             return "👀 공시 감시 실행"
+        if what == "vault":
+            worker.submit("manual-vault", "vault")
+            return "🗂 옵시디언 갱신 실행"
         if what not in ("forecast", "research"):
-            return "사용법: /run forecast|research|watch"
+            return "사용법: /run forecast|research|watch|vault"
         return f"▶️ {what} 사이클 시작" if worker.submit(f"manual-{what}", what) else "이미 대기/실행 중"
     if cmd == "/pause":
         PAUSE_P.parent.mkdir(parents=True, exist_ok=True)
@@ -310,7 +315,7 @@ def poll_telegram(worker: Worker) -> None:
             continue
         reply = handle_command(m["text"], worker)
         if reply:
-            notify.send(reply)
+            notify.send(reply, thread=m.get("message_thread_id"))  # 명령이 온 토픽으로 답장
 
 
 # ---------------------------------------------------------------- main loop
@@ -364,7 +369,7 @@ def main() -> None:
     worker.start()
     import socket
     notify.send(f"🟢 출근했습니다 ({socket.gethostname()}). 일정대로 공시 감시·예측·리서치를 시작합니다. /help",
-                silent=True)
+                silent=True, kind="ops")
     log("daemon started")
     tz = ZoneInfo(schedule()["timezone"])
     last_ping = 0.0

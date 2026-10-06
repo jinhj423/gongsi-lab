@@ -1,0 +1,9 @@
+{
+  "_comment": "PROTECTED. 옵시디언 보관함 내보내기. dir 은 서버(또는 PC)에서 보관함이 동기화되는 로컬 경로. sync: ob(Obsidian Headless) | none",
+  "enabled": false,
+  "dir": "~/obsidian-vault",
+  "root_folder": "공시랩",
+  "sync": "ob",
+  "timeline_max": 40,
+  "sector_recent_max": 15
+}

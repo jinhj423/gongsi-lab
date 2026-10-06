@@ -18,3 +18,5 @@
 - `core/daemon.py` 가 `config/schedule.json` 대로 `loop.sh`·`core/watch.py` 를 실행하고 텔레그램으로 보고.
 - 에이전트 프로세스는 `LAB_AGENT=1` 로 실행되며 core 가 알림 발송·홀드아웃·데몬 실행을 거부한다.
 - 에이전트의 보고는 `journal/outbox/*.md` 로만. 발송과 장부 숫자는 core 담당.
+- 텔레그램은 토픽 3개(alert/report/ops)로 나눠 보낸다 (`notify.send(kind=...)`).
+- `core/vault.py` 가 옵시디언 보관함에 섹터 > 기업 노트를 생성 (VAULT_DIR). 에이전트의 기업 기억은 `journal/notes/`.

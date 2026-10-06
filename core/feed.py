@@ -19,6 +19,7 @@ import yaml
 from common import MARKETS, STRATEGY, append_jsonl, cfg, out
 import ledger
 import prices
+import sectors
 import sources
 
 
@@ -88,7 +89,8 @@ def candidates(offline: bool) -> list[dict]:
             last = float(df["Close"].iloc[-1])
         cands.append({k: e.get(k) for k in ("event_id", "market", "ticker", "name", "type", "title",
                                               "filed_date", "filed_at", "url")}
-                     | {"last_close": last, "traded_value20": tv})
+                     | {"sector": sectors.lookup(e["market"], e["ticker"])["sector"],
+                        "last_close": last, "traded_value20": tv})
     cands.sort(key=lambda c: (c["filed_date"], c["event_id"]), reverse=True)
     return cands
 

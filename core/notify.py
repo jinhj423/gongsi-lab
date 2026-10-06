@@ -1,12 +1,16 @@
 """Telegram reporting. PROTECTED. The agent can never run this (LAB_AGENT=1 is refused).
 
 설정: ~/.config/gongsi-lab/telegram.json
-  {"token": "123:ABC...", "chat_id": -1001234567890, "thread_id": 42, "allowed_user_ids": [11111111]}
-  thread_id 는 그룹 토픽을 쓸 때만. allowed_user_ids 는 /명령을 받아들일 사람.
+  {"token": "123:ABC...", "chat_id": -1001234567890,
+   "threads": {"alert": 11, "report": 12, "ops": 13},
+   "allowed_user_ids": [11111111]}
+  threads: 그룹 토픽 ID. alert=공시 알림, report=예측·주간 보고·상태, ops=실패·경고.
+  없는 종류는 "thread_id"(공통) 로, 그것도 없으면 일반 채팅으로 간다.
+  allowed_user_ids 는 /명령을 받아들일 사람.
 
   python3 core/notify.py whoami          # 봇에게 메시지 보낸 뒤 실행 -> chat_id/thread_id/user_id 확인
   python3 core/notify.py test            # 테스트 메시지
-  python3 core/notify.py text "내용"
+  python3 core/notify.py text "내용" [--kind alert|report|ops]
   python3 core/notify.py send-outbox     # journal/outbox/*.md 를 보내고 sent/ 로 이동
 
 LAB_TELEGRAM_DRYRUN=1 이면 실제 발송 대신 $LAB_DATA/notify-dryrun.log 에 기록.
@@ -61,15 +65,23 @@ def _chunks(text: str) -> list[str]:
     return out
 
 
-def send(text: str, silent: bool = False) -> bool:
-    """Returns True if delivered (or dry-run logged)."""
+KINDS = ("alert", "report", "ops")
+
+
+def thread_for(kind: str, c: dict) -> int | None:
+    return (c.get("threads") or {}).get(kind) or c.get("thread_id")
+
+
+def send(text: str, silent: bool = False, kind: str = "report", thread: int | None = None) -> bool:
+    """Returns True if delivered (or dry-run logged). kind routes to a forum topic;
+    thread (if given) overrides it - used to answer a command in the topic it came from."""
     if is_agent():
         die("에이전트는 직접 알림을 보낼 수 없습니다. journal/outbox/ 에 보고서를 쓰세요.")
     if os.environ.get("LAB_TELEGRAM_DRYRUN") == "1" or conf() is None:
         p = DATA / "notify-dryrun.log"
         p.parent.mkdir(parents=True, exist_ok=True)
         with p.open("a", encoding="utf-8") as f:
-            f.write(f"----- {time.strftime('%Y-%m-%d %H:%M:%S')}\n{text}\n")
+            f.write(f"----- {time.strftime('%Y-%m-%d %H:%M:%S')} [{kind}]\n{text}\n")
         if conf() is None and os.environ.get("LAB_TELEGRAM_DRYRUN") != "1":
             print("[notify] telegram.json 없음 -> notify-dryrun.log 에만 기록", file=sys.stderr)
         return True
@@ -78,8 +90,9 @@ def send(text: str, silent: bool = False) -> bool:
         for part in _chunks(text):
             payload = {"chat_id": c["chat_id"], "text": part, "disable_web_page_preview": True,
                        "disable_notification": silent}
-            if c.get("thread_id"):
-                payload["message_thread_id"] = c["thread_id"]
+            tid = thread if thread is not None else thread_for(kind, c)
+            if tid:
+                payload["message_thread_id"] = tid
             _api("sendMessage", payload)
             time.sleep(0.4)
         return True
@@ -102,10 +115,12 @@ def footer() -> str:
     else:
         lines.append("정산된 예측 없음")
     lines.append(f"대기 {sum(1 for f in fc if f['id'] not in res)}건")
-    for m, unit in (("kr", "원"), ("us", "$")):
+    for m in ("kr", "us"):
         b = ledger.book(m)
         if b["open_bets"] or b["settled_bets"]:
-            lines.append(f"{m.upper()} 페이퍼: 실현 {b['realized_pnl']:+,.0f}{unit} · 보유 {b['open_bets']}건 · 승 {b['wins']}/{b['settled_bets']}")
+            v = b["realized_pnl"]
+            amt = f"{'+' if v >= 0 else '-'}{abs(v):,.0f}원" if m == "kr" else f"{'+' if v >= 0 else '-'}${abs(v):,.0f}"
+            lines.append(f"{m.upper()} 페이퍼: 실현 {amt} · 보유 {b['open_bets']}건 · 승 {b['wins']}/{b['settled_bets']}")
     return "\n".join(lines)
 
 
@@ -161,9 +176,16 @@ def main() -> None:
     if cmd == "whoami":
         whoami()
     elif cmd == "test":
-        print(send("✅ gongsi-lab 알림 테스트"))
+        for k, label in (("alert", "📌 공시 알림"), ("report", "📊 보고"), ("ops", "⚠️ 운영")):
+            print(k, send(f"✅ gongsi-lab 테스트: 이 토픽은 [{label}] 용입니다", kind=k))
     elif cmd == "text":
-        print(send(" ".join(sys.argv[2:])))
+        args = sys.argv[2:]
+        kind = "report"
+        if "--kind" in args:
+            i = args.index("--kind")
+            kind = args[i + 1] if i + 1 < len(args) and args[i + 1] in KINDS else die("--kind alert|report|ops")
+            args = args[:i] + args[i + 2:]
+        print(send(" ".join(args), kind=kind))
     elif cmd == "send-outbox":
         print(json.dumps({"sent": send_outbox()}))
     else:

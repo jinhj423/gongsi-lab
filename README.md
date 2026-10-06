@@ -32,9 +32,11 @@ Claude Code CLI(`claude`)가 PATH 에 있어야 에이전트 루프가 동작한
 
 **키** (값은 절대 저장소에 넣지 말 것):
 ```bash
-# DART: https://opendart.fss.or.kr  → 인증키 신청 (무료)
+# DART (무료): https://opendart.fss.or.kr
+#   상단 메뉴 [인증키 신청/관리] -> [인증키 신청] -> 개인 회원 정보·이메일 입력, 사용 용도(예: 개인 투자 연구) 작성
+#   -> 이메일 인증 링크 클릭 -> [인증키 관리] 에서 40자리 키 확인. 일일 호출 한도가 있다 (과거 수집은 며칠에 나눠짐).
 mkdir -p ~/.config/gongsi-lab
-echo "발급받은키" > ~/.config/gongsi-lab/dart-key
+echo "발급받은키" > ~/.config/gongsi-lab/dart-key        # 서버에서는 ~/.config/gongsi-lab/env 의 DART_API_KEY=
 # SEC: 키 없음. 대신 이름+이메일 User-Agent 가 필수
 echo "Hong Gildong you@example.com" > ~/.config/gongsi-lab/sec-user-agent
 ```
@@ -105,19 +107,24 @@ LAB_MODEL=opus ./loop.sh forecast    # 모델 변경 (기본 sonnet, Pro 사용�
 | 평일 16:30 | 예측 사이클 (국내 장 마감 후) → 예측 보고 | O |
 | 화~토 07:30 | 예측 사이클 (미국 장 마감 후) → 예측 보고 | O |
 | 토 10:00 | 리서치 사이클 → 주간 리서치 보고 (+ 이번 주 전략 변경 git 기록) | O |
+| 1시간마다 + 사이클 직후 | 옵시디언 보관함 갱신 (7번) | X |
 
 일정은 `config/schedule.json`, 관심종목은 `config/my_watchlist.txt` 에서 바꾼다.
 PC가 꺼져 있다 켜지면 8시간 이내에 놓친 정기 작업은 따라잡는다.
 
-**텔레그램 설정** (한 번):
-1. 텔레그램 @BotFather → `/newbot` → 토큰 받기. 그룹 토픽에 넣을 거면 봇을 그룹에 초대하고
-   BotFather `/setprivacy` → Disable.
-2. `~/.config/gongsi-lab/telegram.json` 에 `{"token": "..."}` 만 넣고, 보고받을 방(토픽)에서 봇에게 아무 말이나 보낸 뒤
-   `python3 core/notify.py whoami` → 나온 chat_id, thread_id, user_id 로 파일 완성:
+**텔레그램 설정** (한 번) - 그룹 토픽 3개로 나눠 받는 것을 권장:
+1. 텔레그램 @BotFather → `/newbot` → 토큰 받기. 그룹을 만들고 설정에서 "토픽" 켜기, 봇을 관리자로 초대.
+   토픽 3개 생성: `📌 공시 알림` / `📊 보고` / `⚠️ 운영`. BotFather `/setprivacy` → Disable.
+2. `~/.config/gongsi-lab/telegram.json` 에 `{"token": "..."}` 만 넣고, **각 토픽에 아무 말이나 한 번씩** 보낸 뒤
+   `python3 core/notify.py whoami` → 나온 chat_id, 토픽별 thread_id, 내 user_id 로 파일 완성:
    ```json
-   {"token": "123:ABC", "chat_id": -1001234567890, "thread_id": 42, "allowed_user_ids": [11111111]}
+   {"token": "123:ABC", "chat_id": -1001234567890,
+    "threads": {"alert": 11, "report": 12, "ops": 13},
+    "allowed_user_ids": [11111111]}
    ```
-3. `python3 core/notify.py test` 로 확인.
+   - alert: 관심종목 공시 즉시 알림 (소리 켜기) · report: 예측·주간 보고, 아침 상태 · ops: 실패·경고·출근 (평소엔 조용해야 정상)
+   - 명령(/status 등)의 답은 명령을 보낸 토픽으로 온다
+3. `python3 core/notify.py test` → 세 토픽에 각각 테스트 메시지가 오면 끝.
 
 **실행**:
 ```bash
@@ -181,6 +188,51 @@ systemctl --user enable --now gongsi-lab         # 시작. 재부팅해도 자�
 
 Anthropic 클라우드의 예약 작업으로 돌리지 않는 이유: 그쪽 실행 환경은 외부 접속이 허용 목록으로 제한돼
 DART·SEC·가격 사이트에 직접 붙지 못한다. 그래서 내 서버에서 Claude Code 를 돌린다.
+
+## 7. 옵시디언: 섹터 > 기업 순서로 쌓이는 리서치 기록
+
+텔레그램은 그때그때 받는 용도, 옵시디언은 쌓아두고 다시 보는 용도. 서버가 노트를 만들고
+[Obsidian Headless](https://obsidian.md/help/headless)(공식 서버용 동기화 클라이언트, 오픈 베타)로 옵시디언 싱크에 올린다.
+그러면 PC·폰의 옵시디언에 자동으로 나타난다.
+
+```
+공시랩/
+├─ 대시보드.md                  전체 성적, 섹터별 표, 보유 페이퍼 포지션, 최근 보고
+├─ 섹터/
+│  ├─ 반도체/
+│  │  ├─ 섹터 - 반도체.md        섹터 안 기업 목록, 섹터 성적, 최근 예측
+│  │  ├─ 삼성전자 (005930).md   예측 기록표, 판단 근거, 직원 리서치 메모, 공시 타임라인, 내 메모
+│  │  └─ SK하이닉스 (000660).md
+│  └─ 2차전지/ ...
+└─ 보고/2026-10/2026-10-07 1640 예측 보고.md   텔레그램 보고 원문 (회사명은 기업 노트 링크)
+```
+
+- **어떤 기업이 노트를 갖나**: 관심종목 + 직원이 예측했거나 리서치 메모를 남긴 기업. 수천 개 상장사 전부가 아니다.
+- **직원 리서치 메모**: 직원은 기업을 리서치할 때마다 `journal/notes/` 에 날짜별 메모를 남기고, 다음에 같은 회사를
+  볼 때 그걸 먼저 읽는다. 기업 노트가 곧 직원의 기억이고, 정산되면 결과도 그 메모 아래에 붙는다.
+- **내 메모**: 기업 노트 맨 아래 `## 내 메모` 아래는 사장님 영역. 폰에서 써도 다음 갱신 때 보존된다
+  (서버가 쓰기 전에 먼저 내려받는다). 그 위 부분은 매번 다시 생성되니 고치지 말 것.
+- **섹터 기준**: 국내는 KRX 업종, 미국은 SEC 업종 설명. 너무 세밀하면 `config/sector_overrides.yaml` 에서
+  묶거나(rename) 종목별로 지정(ticker). 바꾸면 노트가 새 섹터 폴더로 옮겨지고 내 메모는 따라간다.
+
+**서버에 연결** (서버 설치 후 한 번):
+```bash
+ob login                                   # 옵시디언 계정 (Sync 구독 필요)
+ob sync-list-remote                        # 내 원격 보관함 이름 확인
+mkdir -p ~/obsidian-vault && cd ~/obsidian-vault
+ob sync-setup --vault "보관함 이름" --device-name gongsi-server   # 종단간 암호화면 비밀번호 입력
+ob sync --path ~/obsidian-vault           # 첫 동기화 (보관함 전체를 내려받음)
+echo 'VAULT_DIR=/home/ubuntu/obsidian-vault' >> ~/.config/gongsi-lab/env
+systemctl --user restart gongsi-lab
+```
+Headless 는 베타라 명령 옵션이 바뀔 수 있다 (`ob --help` 로 확인).
+같은 기기에서 데스크톱 앱 싱크와 Headless 를 함께 쓰면 안 된다 (서버는 별도 기기라 괜찮다).
+
+**알아둘 점**: 서버에 보관함 전체가 내려받아진다. 개인 메모가 많은 보관함이라면, 싱크 요금제가 허용하는 경우
+투자 전용 보관함을 따로 만들어 연결하는 게 깔끔하다. 텔레그램에서 `/run vault` 로 즉시 갱신.
+
+**설정 바꾸는 법**: `config/` (관심종목, 섹터 묶기, 일정) 는 서버에서 직접 고치면 사이클 후 되돌려진다.
+PC 에서 고쳐 GitHub 에 push → 텔레그램 `/update`.
 
 ## 성적 보기
 

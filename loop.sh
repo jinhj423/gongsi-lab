@@ -96,8 +96,10 @@ for i in $(seq 1 "$CYCLES"); do
 
   # 5) 보고: 에이전트가 journal/outbox/ 에 쓴 보고서 발송 (+ core 계산 장부 꼬리말)
   python3 core/notify.py send-outbox >/dev/null || warn "보고서 발송 실패"
+  # 옵시디언: 보고·기업 노트 갱신 (config/vault.json enabled 일 때만)
+  python3 core/vault.py export >/dev/null 2>&1 || warn "옵시디언 내보내기/동기화 실패 (python3 core/vault.py export 로 확인)"
   if [ ${#WARNS[@]} -gt 0 ]; then
-    python3 core/notify.py text "⚠️ [$MODE] 운영 경고
+    python3 core/notify.py text --kind ops "⚠️ [$MODE] 운영 경고
 $(printf -- '- %s\n' "${WARNS[@]}")" >/dev/null || true
   fi
   if [ -n "$(git status --porcelain -- journal/outbox)" ]; then
@@ -112,7 +114,7 @@ $(printf -- '- %s\n' "${WARNS[@]}")" >/dev/null || true
         :
       else
         git rebase --abort 2>/dev/null || true
-        python3 core/notify.py text "⚠️ GitHub push 실패 (충돌). 서버에서 git status 확인 필요" >/dev/null || true
+        python3 core/notify.py text --kind ops "⚠️ GitHub push 실패 (충돌). 서버에서 git status 확인 필요" >/dev/null || true
       fi
     fi
   fi

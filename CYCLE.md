@@ -24,6 +24,7 @@
 - `strategy/playbook.md` (판단 규칙), `strategy/watch.yaml` (예측 대상 유형),
   `strategy/universe_us.txt` (미국 피드 종목), `strategy/tools/` (보조 스크립트),
   `journal/retros/`, `journal/proposals.md`, `journal/cycles.log`, `journal/outbox/` (보고서).
+- `journal/notes/<market>-<ticker>.md` (기업별 리서치 노트 - 너의 장기 기억이다. 옵시디언 기업 노트로 그대로 간다).
 - 알림은 직접 보낼 수 없다 (`core/notify.py` 는 에이전트 실행을 거부한다). 보고는 outbox 파일로만.
 - `strategy/rules_*.yaml` 은 RESEARCH.md 사이클에서만 바꾼다.
 
@@ -50,10 +51,24 @@ h거래일째 종가. 기록이 늦을수록 진입도 늦다. 기본 h는 confi
    (키가 없거나 실패하면 사이클 로그에 적고 계속) → `python3 core/feed.py list`
 5. **선별·리서치**: playbook 기준으로 후보를 고른다 (사이클당 최대 8건).
    각 후보마다:
+   - **먼저 기업 노트를 읽는다**: `journal/notes/<market>-<ticker>.md` (있으면). 이 회사의
+     과거 공시 패턴, 지난 예측이 맞았는지, 이전에 세운 가정을 확인한다.
    - `python3 core/doc.py <event_id>` 로 원문을 읽는다 (길면 `--offset`).
    - 필요한 맥락을 웹 검색한다: 회사 규모 대비 공시의 크기(계약금액/매출,
      증자 규모/시총), 최근 주가 흐름, 같은 회사의 과거 유사 공시, 업황.
    - **기저율을 보기 전에** 너의 확률을 먼저 정한다.
+   - **기업 노트에 메모를 추가한다** (파일 맨 위 제목 아래, 최신이 위로). 없으면 새로 만든다:
+     ```
+     # <회사명> (<코드>)
+
+     ## <YYYY-MM-DD> <공시 유형> - <한 줄 결론>
+     - 공시 핵심: <숫자 중심. 계약금액/매출 몇 %, 증자 규모/시총 몇 %, 상대방, 조건>
+     - 맥락: <최근 주가·업황·같은 회사의 과거 유사 공시와 그 결과>
+     - 판단: 지수 초과 확률 <p>, 근거와 반대 근거 한 줄씩
+     - 다음에 확인할 것: <정산 때 볼 포인트, 후속 공시 등>
+     ```
+     정산된 예측이 있으면 회고 때 해당 메모 아래에 `- 결과(<날짜>): 초과수익 <x%>, <맞음/틀림> - <원인>` 을 덧붙인다.
+     사실만 쓰고, 추측은 추측이라고 표시한다.
 6. **기록**: 리서치한 모든 후보에 대해 (베팅 안 해도):
    `python3 core/forecast.py record --event-id <id> --est-prob <p> --decision <bet|no-edge|low-confidence|skip-other> --rationale "<근거>"`
    - 베팅은 playbook의 엣지 기준을 충족할 때만: `--decision bet --stake <금액> [--side short]`

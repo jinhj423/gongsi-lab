@@ -16,6 +16,7 @@ import json
 from common import DATA, ROOT, out
 import feed
 import ledger
+from classify import label
 import notify
 
 STATE = DATA / "watch-state.json"
@@ -65,12 +66,12 @@ def run(market: str, pull: bool) -> dict:
             memo = wl[(market, e["ticker"].upper())]
             why = "관심종목" + (f"({memo})" if memo and memo != e.get("name") else "")
         elif e["type"] in wide:
-            why = f"시장전체:{e['type']}"
+            why = f"시장전체:{label(e['type'])}"
         if why:
             hits.append(fmt(e, why))
             alerted.add(e["event_id"])
     if hits:
-        ok = notify.send(f"📌 공시 알림 {len(hits)}건\n\n" + "\n\n".join(hits))
+        ok = notify.send(f"📌 공시 알림 {len(hits)}건\n\n" + "\n\n".join(hits), kind="alert")
         if not ok:
             return {"alerts": len(hits), "sent": False}
     STATE.parent.mkdir(parents=True, exist_ok=True)

@@ -96,3 +96,28 @@ def all_types(market: str) -> list[str]:
         if t not in seen:
             seen.append(t)
     return seen + ["other"]
+
+
+LABELS = {
+    # KR
+    "buyback_trust": "자사주 신탁계약", "buyback_trust_end": "자사주 신탁해지", "buyback": "자사주 취득",
+    "treasury_sale": "자사주 처분", "share_cancel": "주식 소각", "rights_offering": "유상증자", "bonus_issue": "무상증자",
+    "cb": "전환사채", "bw": "신주인수권부사채", "eb": "교환사채", "contract_cancel": "공급계약 해지",
+    "supply_contract": "단일판매·공급계약", "prelim_earnings": "잠정실적", "earnings_change": "손익구조 변동",
+    "dividend": "배당", "control_change": "최대주주 변경", "acquisition": "타법인 주식 취득",
+    "divestiture": "타법인 주식 처분", "split": "회사 분할", "merger": "회사 합병", "capital_reduction": "감자",
+    "capex": "유형자산 취득", "asset_sale": "유형자산 처분", "embezzlement": "횡령·배임", "lawsuit": "소송",
+    "trading_halt": "거래정지", "tech_deal": "기술 도입·이전", "material_info": "주요 경영사항",
+    "block_holding": "대량보유 보고", "insider_holding": "임원·주요주주 소유보고",
+    # US
+    "bankruptcy": "파산(1.03)", "restatement": "재무제표 신뢰불가(4.02)", "delisting_notice": "상장폐지 통보(3.01)",
+    "acquisition_completed": "인수 완료(2.01)", "material_agreement": "중요 계약(1.01)",
+    "agreement_terminated": "계약 종료(1.02)", "earnings": "실적 발표(2.02)", "restructuring": "구조조정(2.05)",
+    "impairment": "손상차손(2.06)", "unregistered_equity": "사모 지분발행(3.02)", "auditor_change": "감사인 변경(4.01)",
+    "exec_change": "임원 변동(5.02)", "shareholder_vote": "주총 결과(5.07)", "debt_obligation": "채무 발생(2.03)",
+    "reg_fd": "공정공시(7.01)", "other_event": "기타 사건(8.01)", "other": "기타",
+}
+
+
+def label(typ: str) -> str:
+    return LABELS.get(typ, typ)
