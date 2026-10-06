@@ -1,0 +1,23 @@
+# AGENT-EDITABLE. 실시간 예측 대상 공시 유형 (core/feed.py list 가 읽음).
+# 넓게 시작하고, 예측이 쌓이면 brier_delta 가 꾸준히 나쁜 유형은 빼고 근거를 남긴다.
+kr:
+  - supply_contract
+  - buyback
+  - buyback_trust
+  - rights_offering
+  - cb
+  - bw
+  - prelim_earnings
+  - earnings_change
+  - acquisition
+  - control_change
+  - share_cancel
+us:
+  - earnings
+  - material_agreement
+  - acquisition_completed
+  - restructuring
+  - impairment
+  - restatement
+  - exec_change
+max_candidates_per_cycle: 8

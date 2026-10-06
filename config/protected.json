@@ -1,0 +1,30 @@
+{
+  "_comment": "PROTECTED - 에이전트는 이 파일과 core/ 를 수정할 수 없다. 변경은 운영자(사람)만, 커밋 메시지는 'operator:' 로 시작.",
+  "horizons": [20, 60],
+  "primary_horizon": 20,
+  "in_sample_start": "2018-01-01",
+  "holdout_start": "2025-10-01",
+  "max_backtests_per_day": 10,
+  "cost_bps_roundtrip": {
+    "_comment": "왕복 비용(세금+수수료+슬리피지) 가정. KR 증권거래세율은 해마다 바뀌니 운영자가 확인할 것.",
+    "kr": 35,
+    "us": 10
+  },
+  "max_abs_daily_return": {
+    "_comment": "이 값을 넘는 일간 변동이 창 안에 있으면 미수정 주가(무상증자/액면분할) 의심으로 이벤트를 제외. KR 가격제한폭 30%.",
+    "kr": 0.305,
+    "us": 3.0
+  },
+  "benchmarks": {
+    "kr": {"Y": "KS11", "K": "KQ11", "default": "KS11"},
+    "us": {"default": "SPY"}
+  },
+  "paper": {
+    "bankroll": {"kr": 10000000, "us": 10000},
+    "max_stake": {"kr": 500000, "us": 500},
+    "max_open_positions": {"kr": 20, "us": 20},
+    "max_new_bets_per_cycle": 5,
+    "allow_short": {"kr": false, "us": true}
+  },
+  "baseline_shrink_k": 10
+}

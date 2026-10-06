@@ -1,0 +1,9 @@
+# AGENT-EDITABLE. 미국 8-K 기반 백테스트 규칙.
+horizon: 20
+side: long               # long | short (US 는 short 허용)
+max_positions: 15
+include_corrections: false
+min_price: 5
+min_traded_value: 2.0e7  # 직전 20일 평균 거래대금 하한 (달러)
+types:
+  - material_agreement

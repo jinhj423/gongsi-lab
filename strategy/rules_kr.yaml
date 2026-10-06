@@ -1,0 +1,13 @@
+# AGENT-EDITABLE. 한국 공시 기반 백테스트 규칙 (core/backtest.py 가 읽음).
+# 모든 수정은 journal/research/ 의 가설 메모와 근거(이벤트 스터디/백테스트 결과)를 인용할 것.
+horizon: 20              # config horizons 중 하나 (20 또는 60)
+side: long               # KR 은 long 만 허용
+max_positions: 20        # 동시 보유 슬롯 수 (자산 균등 배분)
+include_corrections: false
+min_price: 1000          # 진입 시가 하한 (원)
+min_traded_value: 1.0e9  # 직전 20일 평균 거래대금 하한 (원)
+# pre_ret20_min: -0.3    # 직전 20일 수익률 하한 (선택)
+# pre_ret20_max: 0.5     # 직전 20일 수익률 상한 (선택)
+types:                   # 진입 대상 공시 유형 (core/classify.py 의 KR 유형명)
+  - buyback
+  - supply_contract

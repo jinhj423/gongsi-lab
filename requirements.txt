@@ -1,0 +1,6 @@
+pandas>=2.0
+numpy
+pyyaml
+requests
+finance-datareader   # KR 가격
+yfinance             # US 가격

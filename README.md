@@ -1,0 +1,115 @@
+# gongsi-lab — 공시 기반 매매 연구 실험
+
+phil(Polymarket 자기개선 트레이더)의 구조를 한국(DART)·미국(SEC 8-K) 공시 매매에 옮긴 것.
+
+```
+            ┌──────────── 과거 검증 (기계적) ─────────────┐
+DART/SEC ─► 이벤트 DB ─► eventstudy.py ─► 유형별 기저율 ─┐  backtest.py ◄─ strategy/rules_*.yaml
+                                                         │       ▲              (에이전트가 수정,
+            ┌──────────── 전진 테스트 (LLM 판단) ───────┐ │       │               하루 횟수 제한,
+새 공시 ─► feed.py ─► doc.py 원문 ─► Claude 확률 기록 ─┼─┴► score.py: brier_delta   홀드아웃 잠금)
+                       forecast.py ─► resolve.py(20일 후 자동 채점, 페이퍼 손익)
+```
+
+- **이벤트 스터디**: 공시 유형별로 "다음 시가 진입 → 20/60거래일 후 종가"의 벤치마크 대비 초과수익(AR).
+- **백테스트**: `rules_*.yaml` 규칙을 슬롯 포트폴리오로 시뮬레이션. 비용, 연도별 일관성, MDD, 시도 횟수 기록.
+- **실시간 예측**: 새 공시마다 Claude 가 "h거래일 동안 벤치마크를 이길 확률"을 기록하고, 기한이 지나면
+  자동 채점. 비교 대상은 이벤트 스터디 기저율. `brier_delta < 0` 이 꾸준하면 AI 판단이 실제로 가치가 있다는 뜻.
+
+## 왜 두 층인가
+
+LLM 에게 과거 공시를 보여주고 맞히게 하면, 모델이 그 뒤 주가를 학습 데이터로 이미 알고 있을 수 있다.
+그래서 LLM 판단은 앞으로 나올 공시로만 평가하고, 과거 백테스트는 규칙(숫자)으로만 한다.
+
+## 설치
+
+```bash
+python3 -m pip install -r requirements.txt     # Python 3.10+
+git init && git add -A && git commit -m "operator: init"    # loop.sh 는 git 저장소 필요
+```
+Windows 라면 WSL(Ubuntu) 에서 돌리는 것을 권장 (`loop.sh`, `python3` 명령 기준으로 작성됨).
+Claude Code CLI(`claude`)가 PATH 에 있어야 에이전트 루프가 동작한다.
+
+**키** (값은 절대 저장소에 넣지 말 것):
+```bash
+# DART: https://opendart.fss.or.kr  → 인증키 신청 (무료)
+mkdir -p ~/.config/gongsi-lab
+echo "발급받은키" > ~/.config/gongsi-lab/dart-key
+# SEC: 키 없음. 대신 이름+이메일 User-Agent 가 필수
+echo "Hong Gildong you@example.com" > ~/.config/gongsi-lab/sec-user-agent
+```
+(환경변수 `DART_API_KEY`, `SEC_USER_AGENT` 로도 가능)
+
+## 0. 키 없이 데모로 먼저 돌려보기
+
+```bash
+LAB_DATA=demo-data python3 core/demo.py                      # 가상 종목/공시 생성 (일부 유형에 드리프트 심어둠)
+LAB_DATA=demo-data python3 core/eventstudy.py --market kr --by-year
+LAB_DATA=demo-data python3 core/backtest.py --market kr --trades
+python3 tests/run_tests.py                                   # 룩어헤드·원장 테스트
+```
+데모를 돌리면 `journal/trials.jsonl`, `journal/baselines.json` 이 생긴다. 실제 데이터로 시작하기 전에 지울 것.
+
+## 1. 과거 데이터 수집 (운영자, 1회)
+
+```bash
+python3 core/ingest.py kr --from 2018-01-01        # DART 주요사항(B)+거래소공시(I), 하루 단위, 중단 시 이어받기
+python3 core/ingest.py prices kr                   # 등장 종목 + KOSPI/KOSDAQ 지수 일봉
+python3 core/ingest.py us --tickers-file strategy/universe_us.txt --from 2018-01-01
+python3 core/ingest.py prices us
+```
+DART 는 일일 호출 한도(약 2만 건)가 있어 2018년부터 받으면 하루~이틀 걸릴 수 있다. 한도에 걸리면
+상태를 저장하고 멈추니 다음 날 같은 명령을 다시 실행하면 된다. 데이터는 `data/` (git 제외).
+
+## 2. 직접 분석
+
+```bash
+python3 core/eventstudy.py --market kr --by-year          # 유형별 AR 표 + journal/baselines.json 갱신
+python3 core/eventstudy.py --market kr --h 60 --types supply_contract,buyback
+python3 core/backtest.py --market kr --trades              # reports/trades_kr_in.csv
+```
+읽는 법: `mean_ar` 크기보다 **`t_date_clustered`(|t|>2 이상)와 연도별 부호 일관성**을 먼저 본다.
+`window_status` 에 `no_price` 가 많으면 상장폐지 종목 가격이 빠진 것 → 결과가 낙관적으로 치우친다.
+
+## 3. 에이전트 루프
+
+```bash
+./loop.sh forecast            # 예측 사이클 1회 (CYCLE.md): 정산→채점→회고→피드→원문 리서치→확률 기록
+./loop.sh research            # 리서치 사이클 1회 (RESEARCH.md): 이벤트 스터디→가설 1개→백테스트→채택/기각
+LAB_MODEL=opus ./loop.sh forecast    # 모델 변경 (기본 sonnet, Pro 사용량 절약)
+```
+권장 주기 (cron 또는 Windows 작업 스케줄러 → WSL):
+```
+30 16 * * 1-5   cd ~/gongsi-lab && ./loop.sh forecast   # KST 16:30, 한국 장 마감 후
+30  7 * * 2-6   cd ~/gongsi-lab && ./loop.sh forecast   # KST 07:30, 미국 장 마감 후
+0  10 * * 6     cd ~/gongsi-lab && ./loop.sh research   # 토요일
+```
+`loop.sh` 는 사이클이 끝날 때마다 보호 경로 변경을 되돌리고, 원장 삭제·홀드아웃 접근·캡 위반을 경고한다.
+
+## 4. 운영자(나)의 역할
+
+- `journal/operator-notes.md` 로 맥락 전달, `journal/proposals.md` 의 건의 처리.
+- 분기 1회 홀드아웃 확인: `LAB_OPERATOR=1 python3 core/backtest.py --market kr --holdout`
+  - 인샘플에서 좋았던 규칙이 홀드아웃에서 무너지면 과최적화. 이때 `holdout_start` 를 옮겨 새 홀드아웃을 잡는다.
+- `config/protected.json`: 비용 가정(세율 확인), 지평, 페이퍼 캡, 홀드아웃 날짜. 수정 커밋은 `operator:` 로 시작.
+
+## 성적 보기
+
+```bash
+python3 core/score.py
+```
+- `brier_delta`: 내 Brier − 기저율 Brier. 음수면 기저율보다 나은 예측. **30건 미만은 노이즈.**
+- `by_type`: 어떤 공시 유형에서 AI 판단이 가치를 내는지.
+- `calibration_buckets`: 0.6이라고 한 것들이 실제로 60% 맞았는지.
+- `paper_book`: 페이퍼 손익 (KR 원화 1천만 원, US 1만 달러 가상 자금).
+
+## 알려진 한계 (정직하게)
+
+- DART 목록 API 는 접수 **시각**을 주지 않는다 → 공시일 다음 거래일 시가 진입으로 보수적 처리.
+  장중 공시의 당일 반응은 놓치지만 룩어헤드는 없다.
+- 분류는 보고서명/8-K item 기준. "계약금액이 매출의 몇 %인가" 같은 **크기 정보는 아직 없다**.
+  가장 효과가 클 개선 후보 (DART 주요사항보고서 상세 API 로 파싱).
+- 가격 미수정 의심(일간 ±30.5% 초과) 구간은 제외. 상장폐지 종목은 가격이 없으면 빠진다 (생존편향).
+- 미국 유니버스가 현재 대형주 목록이라 과거 백테스트에 생존편향이 있다.
+- 비용은 단순 가정(KR 왕복 0.35%, US 0.10%). 세율·수수료를 확인해서 조정할 것.
+- 전부 페이퍼다. 투자 조언이 아니다.
