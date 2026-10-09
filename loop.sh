@@ -31,8 +31,8 @@ fi
 command -v claude >/dev/null || { echo "ERROR: claude CLI 가 PATH 에 없습니다" >&2; exit 1; }
 git rev-parse --git-dir >/dev/null 2>&1 || { echo "ERROR: git 저장소가 아닙니다 (git init 먼저)" >&2; exit 1; }
 
-PROTECTED=(core/ config/ deploy/ CYCLE.md RESEARCH.md loop.sh CLAUDE.md README.md .gitignore tests/ requirements.txt)
-APPEND_ONLY=(journal/feed.jsonl journal/forecasts.jsonl journal/resolutions.jsonl journal/trials.jsonl journal/holdout-log.jsonl)
+PROTECTED=(core/ config/ deploy/ .github/ CYCLE.md RESEARCH.md START.md loop.sh CLAUDE.md README.md .gitignore .gitattributes tests/ requirements.txt)
+APPEND_ONLY=(journal/forecasts.jsonl journal/resolutions.jsonl journal/trials.jsonl journal/holdout-log.jsonl)
 
 holdout_lines() { if [ -f journal/holdout-log.jsonl ]; then wc -l < journal/holdout-log.jsonl; else echo 0; fi; }
 WARNS=()
@@ -51,7 +51,9 @@ for i in $(seq 1 "$CYCLES"); do
   find "$LOGDIR" -maxdepth 1 -name "cycle-*.log" -printf "%T@ %p\n" | sort -rn | tail -n +61 | cut -d" " -f2- | xargs -r rm -f
 
   # LAB_AGENT=1: core 가 이 프로세스를 에이전트로 인식 -> 알림 발송·홀드아웃·데몬 실행 거부
-  if ! LAB_AGENT=1 claude -p "$(cat "$PROMPT_FILE")" \
+  # 직원은 공시 원문(외부 텍스트)을 읽으므로, 필요 없는 비밀값(텔레그램·옵시디언)은 환경에서 빼고 실행한다.
+  if ! env -u TELEGRAM_BOT_TOKEN -u OBSIDIAN_EMAIL -u OBSIDIAN_PASSWORD -u OBSIDIAN_E2E_PASSWORD \
+       -u OBSIDIAN_AUTH_TOKEN -u OBSIDIAN_MFA LAB_AGENT=1 claude -p "$(cat "$PROMPT_FILE")" \
     --model "${LAB_MODEL:-sonnet}" \
     --max-turns "${LAB_MAX_TURNS:-80}" \
     --permission-mode acceptEdits \

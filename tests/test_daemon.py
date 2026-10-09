@@ -72,7 +72,7 @@ def main() -> None:
     print("commands ok")
 
     # ---- watcher (no pull): watchlist hit + no duplicate
-    feed = root / "journal" / "feed.jsonl"
+    feed = root / "state" / "feed.jsonl"
     d = dt.date.today().isoformat()
     evs = [
         {"event_id": "kr:w1", "market": "kr", "ticker": "005930", "name": "삼성전자", "board": "Y", "type": "buyback",

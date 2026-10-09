@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import json
 
-from common import JOURNAL, cfg, read_jsonl
+from common import JOURNAL, STATE, cfg, read_jsonl
 
-FEED = JOURNAL / "feed.jsonl"
+FEED = STATE / "feed.jsonl"   # 공시 피드 (정리 대상, 원장 아님)
 FORECASTS = JOURNAL / "forecasts.jsonl"
 RESOLUTIONS = JOURNAL / "resolutions.jsonl"
 

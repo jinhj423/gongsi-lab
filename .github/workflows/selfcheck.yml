@@ -1,0 +1,71 @@
+# 처음 설정 후 한 번 실행: 키·데이터원·텔레그램·Claude·옵시디언이 되는지 점검해 텔레그램 운영 토픽으로 보고.
+name: selfcheck
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/selfcheck.yml"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gongsi-lab
+  cancel-in-progress: false
+
+jobs:
+  selfcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      LAB_DATA: ${{ github.workspace }}/data
+      DART_API_KEY: ${{ secrets.DART_API_KEY }}
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      OBSIDIAN_EMAIL: ${{ secrets.OBSIDIAN_EMAIL }}
+      OBSIDIAN_PASSWORD: ${{ secrets.OBSIDIAN_PASSWORD }}
+      OBSIDIAN_VAULT: ${{ secrets.OBSIDIAN_VAULT }}
+      OBSIDIAN_E2E_PASSWORD: ${{ secrets.OBSIDIAN_E2E_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install -q -r requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Claude Code + Obsidian Headless
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          npm install -g obsidian-headless
+      - uses: actions/cache/restore@v4
+        with:
+          path: data
+          key: data-${{ github.run_id }}
+          restore-keys: data-
+      - name: Self-check
+        run: |
+          python3 core/tick.py plan >/dev/null || true   # 그동안 온 /setup 처리
+          python3 core/selfcheck.py
+      - name: Commit state
+        if: always()
+        run: |
+          git config user.name "gongsi-lab-bot"
+          git config user.email "gongsi-lab-bot@users.noreply.github.com"
+          git add -A state 2>/dev/null || true
+          git diff --cached --quiet || git commit -qm "operator: selfcheck state"
+          git push -q origin HEAD:main || (git pull -q --rebase origin main && git push -q origin HEAD:main) || true
+      - id: dirty
+        if: always()
+        run: if [ -f data/.dirty ]; then rm -f data/.dirty; echo "save=true" >> "$GITHUB_OUTPUT"; fi
+      - if: always() && steps.dirty.outputs.save == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: data
+          key: data-${{ github.run_id }}

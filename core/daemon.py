@@ -24,11 +24,11 @@ import threading
 import time
 from zoneinfo import ZoneInfo
 
-from common import DATA, JOURNAL, ROOT, die, is_agent, read_jsonl
+from common import DATA, JOURNAL, ROOT, STATE, die, is_agent
 import notify
 
-STATE_P = DATA / "daemon-state.json"
-PAUSE_P = DATA / "PAUSED"
+STATE_P = STATE / "daemon-state.json"
+PAUSE_P = STATE / "PAUSED"
 LOG_P = DATA / "daemon.log"
 _lock = threading.Lock()
 _restart = threading.Event()
@@ -150,6 +150,8 @@ def run_job(run: str, timeout_min: int) -> tuple[bool, str]:
         cmd = [sys.executable, str(ROOT / "core" / "watch.py"), parts[1]]
     elif parts[0] == "vault":
         cmd = [sys.executable, str(ROOT / "core" / "vault.py"), "export"]
+    elif parts[0] == "ingest":
+        cmd = [sys.executable, str(ROOT / "core" / "backfill.py"), "--minutes", str(schedule().get("ingest_minutes", 40))]
     elif parts[0] == "status":
         return notify.send(status_text(), silent=True), ""
     else:

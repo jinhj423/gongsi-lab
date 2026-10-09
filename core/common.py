@@ -10,7 +10,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA = Path(os.environ.get("LAB_DATA", ROOT / "data"))
+DATA = Path(os.environ.get("LAB_DATA", ROOT / "data"))   # 큰 데이터·캐시 (다시 받을 수 있음)
+STATE = Path(os.environ.get("LAB_STATE", ROOT / "state"))  # 작은 영구 상태 (git 에 커밋됨)
 JOURNAL = ROOT / "journal"
 STRATEGY = ROOT / "strategy"
 

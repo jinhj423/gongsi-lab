@@ -1,6 +1,9 @@
 """Telegram reporting. PROTECTED. The agent can never run this (LAB_AGENT=1 is refused).
 
-설정: ~/.config/gongsi-lab/telegram.json
+설정 (둘 중 하나):
+ A) GitHub Actions/환경변수: TELEGRAM_BOT_TOKEN 만 있으면 된다. 방·토픽·주인은 텔레그램에서
+    /setup 으로 자동 등록되어 state/telegram.json 에 저장된다 (core/tgsetup.py).
+ B) 파일 ~/.config/gongsi-lab/telegram.json
   {"token": "123:ABC...", "chat_id": -1001234567890,
    "threads": {"alert": 11, "report": 12, "ops": 13},
    "allowed_user_ids": [11111111]}
@@ -23,17 +26,39 @@ import sys
 import time
 from pathlib import Path
 
-from common import DATA, JOURNAL, die, is_agent
+from common import DATA, JOURNAL, STATE, die, is_agent
 
 OUTBOX = JOURNAL / "outbox"
 CONF = Path.home() / ".config" / "gongsi-lab" / "telegram.json"
 LIMIT = 3900
 
 
+AUTO = STATE / "telegram.json"   # /setup 으로 자동 등록된 방·토픽·주인 (토큰은 절대 저장 안 함)
+
+
+def auto() -> dict:
+    return json.loads(AUTO.read_text(encoding="utf-8")) if AUTO.exists() else {}
+
+
+def save_auto(d: dict) -> None:
+    d = {k: v for k, v in d.items() if k != "token"}
+    AUTO.parent.mkdir(parents=True, exist_ok=True)
+    AUTO.write_text(json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
 def conf() -> dict | None:
+    """token + chat_id + threads + allowed_user_ids. None if no token at all."""
     if CONF.exists():
         return json.loads(CONF.read_text(encoding="utf-8"))
-    return None
+    tok = os.environ.get("TELEGRAM_BOT_TOKEN")
+    if not tok:
+        return None
+    a = auto()
+    c = {"token": tok, "chat_id": a.get("chat_id"), "threads": a.get("threads", {}),
+         "allowed_user_ids": a.get("owner_ids", [])}
+    if os.environ.get("TELEGRAM_CHAT_ID"):  # 기존 봇처럼 시크릿으로 방을 고정하고 싶을 때
+        c["chat_id"] = int(os.environ["TELEGRAM_CHAT_ID"])
+    return c
 
 
 def _api(method: str, payload: dict) -> dict:
@@ -86,6 +111,13 @@ def send(text: str, silent: bool = False, kind: str = "report", thread: int | No
             print("[notify] telegram.json 없음 -> notify-dryrun.log 에만 기록", file=sys.stderr)
         return True
     c = conf()
+    if not c.get("chat_id"):
+        print("[notify] 아직 텔레그램 방이 등록되지 않음 (/setup 필요) - 발송 보류", file=sys.stderr)
+        p = DATA / "notify-pending.log"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a", encoding="utf-8") as f:
+            f.write(f"----- {time.strftime('%Y-%m-%d %H:%M:%S')} [{kind}]\n{text}\n")
+        return False
     try:
         for part in _chunks(text):
             payload = {"chat_id": c["chat_id"], "text": part, "disable_web_page_preview": True,

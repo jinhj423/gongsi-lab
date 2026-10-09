@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from common import DATA, JOURNAL, ROOT, die, is_agent, out
+from common import JOURNAL, ROOT, STATE, die, is_agent, out
 import ledger
 import sectors
 from classify import label
@@ -35,7 +35,7 @@ from classify import label
 KST = ZoneInfo("Asia/Seoul")
 MEMO_HEAD = "## 내 메모"
 MEMO_MARK = "<!-- 이 아래는 자동 갱신 때 보존됩니다. 자유롭게 쓰세요. -->"
-INDEX = DATA / "vault-index.json"
+INDEX = STATE / "vault-index.json"
 
 
 def conf() -> dict:
@@ -299,6 +299,12 @@ def main() -> None:
     a = sys.argv[1:]
     if is_agent():
         die("에이전트는 보관함 내보내기를 실행할 수 없습니다 (journal/notes 에 쓰면 자동 반영)")
+    if a[:1] == ["export"] and os.environ.get("OBSIDIAN_VAULT") and not os.environ.get("VAULT_DIR"):
+        import obsync  # GitHub Actions: 매번 새 환경이라 로그인 + 임시 폴더 연결부터
+        try:
+            obsync.prepare()
+        except Exception as e:  # noqa: BLE001
+            die(f"옵시디언 준비 실패: {e}")
     c = conf()
     vault = Path(os.path.expanduser(c["dir"]))
     if a[:1] == ["status"]:

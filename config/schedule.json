@@ -1,5 +1,5 @@
 {
-  "_comment": "PROTECTED. 상주 데몬(core/daemon.py) 일정. 시각은 timezone 기준, days 는 월=0 ... 일=6.",
+  "_comment": "PROTECTED. 일정 (서버 데몬·GitHub Actions 공용). 시각은 timezone 기준, days 는 월=0 ... 일=6. Actions 는 30분마다 깨어나므로 실제 실행은 최대 30분(+GitHub 지연) 늦을 수 있다.",
   "timezone": "Asia/Seoul",
   "jobs": [
     {
@@ -48,6 +48,20 @@
       ]
     },
     {
+      "name": "ingest",
+      "run": "ingest",
+      "days": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "at": "02:10"
+    },
+    {
       "name": "forecast-kr",
       "run": "forecast",
       "days": [
@@ -91,18 +105,19 @@
         5,
         6
       ],
-      "every_min": 60,
+      "every_min": 240,
       "between": [
-        "00:00",
+        "07:00",
         "23:59"
       ]
     }
   ],
   "catch_up_hours": 8,
-  "max_job_minutes": 60,
+  "max_job_minutes": 90,
   "market_wide_alert_types": {
     "_comment": "관심종목이 아니어도 시장 전체에서 즉시 알릴 공시 유형 (많으면 시끄러움)",
     "kr": [],
     "us": []
-  }
+  },
+  "ingest_minutes": 40
 }

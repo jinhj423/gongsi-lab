@@ -33,7 +33,8 @@ def main() -> None:
 
     # ---- sectors: cache + operator overrides (rename + per-ticker)
     data.mkdir()
-    (data / "sectors.json").write_text(json.dumps({
+    (root / "state").mkdir(exist_ok=True)
+    (root / "state" / "sectors.json").write_text(json.dumps({
         "kr": {"005930": {"sector": "통신 및 방송 장비 제조업", "industry": "반도체, 휴대폰", "name": "삼성전자"},
                "247540": {"sector": "일차전지 및 축전지 제조업", "industry": "양극재", "name": "에코프로비엠"},
                "035420": {"sector": "자료처리, 호스팅, 포털 및 기타 인터넷 정보매개 서비스업", "industry": "포털", "name": "NAVER"}},
@@ -58,7 +59,7 @@ def main() -> None:
         {"event_id": "kr:4", "market": "kr", "ticker": "111111", "name": "관계없는회사", "board": "K", "type": "cb",
          "corr": False, "title": "전환사채권발행결정", "filed_date": "2026-09-10", "filed_at": None, "source_id": "4", "url": ""},
     ]
-    (j / "feed.jsonl").write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in feed), encoding="utf-8")
+    (root / "state" / "feed.jsonl").write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in feed), encoding="utf-8")
     fcs = [
         {"id": "f1", "recorded_at": "2026-09-01T08:00:00Z", "event_id": "kr:1", "market": "kr", "ticker": "247540",
          "name": "에코프로비엠", "board": "K", "type": "supply_contract", "title": "단일판매ㆍ공급계약체결", "filed_date": "2026-09-01",
@@ -132,7 +133,7 @@ def main() -> None:
     (data / "notify-dryrun.log").unlink(missing_ok=True)
     import datetime as dt
     today = dt.date.today().isoformat()
-    with (j / "feed.jsonl").open("a", encoding="utf-8") as f:
+    with (root / "state" / "feed.jsonl").open("a", encoding="utf-8") as f:
         f.write(json.dumps({**feed[2], "event_id": "kr:today", "filed_date": today}, ensure_ascii=False) + "\n")
     watch.run("kr", pull=False)
     daemon.Worker()

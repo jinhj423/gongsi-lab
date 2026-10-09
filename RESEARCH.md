@@ -18,7 +18,9 @@
 ## 절차
 
 1. `journal/operator-notes.md`, 최근 `journal/research/` 메모 3개, `python3 core/score.py`
-   (실시간 예측 성적)를 읽는다.
+   (실시간 예측 성적)를 읽는다. 그리고 `$LAB_DATA/backfill.json` (없으면 `data/backfill.json`) 을 읽는다.
+   과거 데이터 수집이 아직 끝나지 않았으면(`complete` 가 false 이거나 파일이 없으면) 이벤트 스터디·백테스트를
+   하지 않는다. 주간 보고에 "과거 데이터 수집 중 (어디까지 왔는지)" 와 실시간 예측 성적만 쓰고 9~10단계로 간다.
 2. **이벤트 스터디**: `python3 core/eventstudy.py --market kr --by-year` 와 `--market us`
    (필요하면 `--h 60`). 이 실행은 `journal/baselines.json` 도 갱신한다.
    읽을 것: 유형별 n, mean_ar, hit, t_date_clustered, 연도별 부호의 일관성,

@@ -35,7 +35,7 @@ def main() -> None:
 
     ev = ledger.feed_events().get(a.event_id)
     if ev is None:
-        die("feed.jsonl 에 없는 event_id")
+        die("state/feed.jsonl 에 없는 event_id")
     if a.h not in c["horizons"]:
         die(f"h 는 {c['horizons']} 중 하나")
     if not 0.01 <= a.est_prob <= 0.99:

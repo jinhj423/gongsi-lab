@@ -20,3 +20,10 @@
 - 에이전트의 보고는 `journal/outbox/*.md` 로만. 발송과 장부 숫자는 core 담당.
 - 텔레그램은 토픽 3개(alert/report/ops)로 나눠 보낸다 (`notify.send(kind=...)`).
 - `core/vault.py` 가 옵시디언 보관함에 섹터 > 기업 노트를 생성 (VAULT_DIR). 에이전트의 기업 기억은 `journal/notes/`.
+
+## GitHub Actions 운영 (권장 배포)
+- `.github/workflows/tick.yml` 이 30분마다 `core/tick.py plan` → (필요 시 Claude/옵시디언 설치) → `core/tick.py run`.
+- 영구 상태는 `state/` (커밋됨), 큰 데이터는 `data/` (Actions 캐시, 다시 받을 수 있음).
+- 텔레그램은 `TELEGRAM_BOT_TOKEN` 만 시크릿, 방·토픽은 `/setup` 으로 `state/telegram.json` 에 자동 등록 (`core/tgsetup.py`).
+- 옵시디언은 `core/obsync.py` (Obsidian Headless, 노트만 동기화, 토큰은 암호화해 캐시에).
+- 과거 데이터는 매일 밤 `core/backfill.py` 가 시간 예산 안에서 조금씩 채운다.

@@ -16,9 +16,9 @@ import time
 
 import yaml
 
-from common import DATA, ROOT, out
+from common import ROOT, STATE, out
 
-CACHE = DATA / "sectors.json"
+CACHE = STATE / "sectors.json"
 UNKNOWN = "미분류"
 
 

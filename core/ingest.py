@@ -14,6 +14,7 @@ import argparse
 import datetime as dt
 import json
 import sys
+import time
 
 import pandas as pd
 
@@ -33,19 +34,25 @@ def load_events(market: str) -> list[dict]:
     return sorted(seen.values(), key=lambda e: (e["filed_date"], e.get("filed_at") or "", e["event_id"]))
 
 
-def ingest_kr(start: str, end: str, types: list[str]) -> None:
-    state_p = DATA / "events" / "kr.state.json"
+def ingest_kr(start: str, end: str, types: list[str], max_minutes: float = 0) -> dict:
+    state_p = DATA / "events" / "kr.state.json"   # 이벤트 데이터와 같이 보관 (캐시가 날아가면 처음부터)
     state = json.loads(state_p.read_text()) if state_p.exists() else {}
     d = dt.date.fromisoformat(start)
     if state.get("done_through") and state.get("types") == types:
         d = max(d, dt.date.fromisoformat(state["done_through"]) + dt.timedelta(days=1))
     last = dt.date.fromisoformat(end)
     n_total = 0
+    t0 = time.time()
+    stopped = None
     while d <= last:
+        if max_minutes and time.time() - t0 > max_minutes * 60:
+            stopped = "time budget"
+            break
         if d.weekday() < 5:
             try:
                 raw = sources.dart_list_day(d.strftime("%Y%m%d"), types)
-            except sources.SourceError as e:
+            except Exception as e:  # noqa: BLE001  (한도 초과·네트워크 - 상태 저장 후 다음에 이어서)
+                stopped = f"{d}: {e}"
                 print(f"중단 ({d}): {e}. 상태 저장됨, 나중에 다시 실행하세요.", file=sys.stderr)
                 break
             n = 0
@@ -60,7 +67,10 @@ def ingest_kr(start: str, end: str, types: list[str]) -> None:
         state_p.parent.mkdir(parents=True, exist_ok=True)
         state_p.write_text(json.dumps(state))
         d += dt.timedelta(days=1)
-    print(json.dumps({"saved": n_total, "done_through": state.get("done_through")}))
+    res = {"saved": n_total, "done_through": state.get("done_through"), "stopped": stopped,
+           "complete": state.get("done_through", "") >= (last - dt.timedelta(days=1)).isoformat()}
+    print(json.dumps(res))
+    return res
 
 
 def ingest_us(tickers: list[str], since: str) -> None:
@@ -89,17 +99,25 @@ def ingest_us(tickers: list[str], since: str) -> None:
     print(json.dumps({"saved": n_total, "unknown_tickers": missing}))
 
 
-def ingest_prices(market: str, start: str) -> None:
+def ingest_prices(market: str, start: str, max_minutes: float = 0) -> dict:
     evs = load_events(market)
     tickers = sorted({e["ticker"] for e in evs})
     benches = sorted(set(v for k, v in cfg()["benchmarks"][market].items() if k != "_comment"))
     ok = 0
+    t0 = time.time()
+    done = 0
     for i, t in enumerate(benches + tickers):
-        df = prices.update(market, t, start=start, max_age_hours=12)
+        if max_minutes and time.time() - t0 > max_minutes * 60:
+            break
+        done = i + 1
+        df = prices.update(market, t, start=start, max_age_hours=144)  # 과거 데이터용: 주 1회 갱신이면 충분
         ok += df is not None
         if i % 50 == 0:
             print(f"{i}/{len(benches) + len(tickers)}", file=sys.stderr)
-    print(json.dumps({"tickers": len(tickers), "with_prices": ok - len(benches)}))
+    res = {"tickers": len(tickers), "processed": done, "with_prices": ok,
+           "complete": done >= len(benches) + len(tickers)}
+    print(json.dumps(res))
+    return res
 
 
 def main() -> None:
@@ -110,9 +128,10 @@ def main() -> None:
     ap.add_argument("--to", dest="end", default=dt.date.today().isoformat())
     ap.add_argument("--types", default="B,I", help="DART 공시유형 코드 (B=주요사항보고, I=거래소공시, D=지분공시 ...)")
     ap.add_argument("--tickers-file")
+    ap.add_argument("--max-minutes", type=float, default=0, help="이 시간이 지나면 저장하고 멈춤 (다음 실행이 이어받음)")
     a = ap.parse_args()
     if a.what == "kr":
-        ingest_kr(a.start, a.end, a.types.split(","))
+        ingest_kr(a.start, a.end, a.types.split(","), a.max_minutes)
     elif a.what == "us":
         if not a.tickers_file:
             sys.exit("--tickers-file 필요")
@@ -122,7 +141,7 @@ def main() -> None:
         if a.market not in ("kr", "us"):
             sys.exit("prices kr|us")
         price_start = (pd.Timestamp(a.start) - pd.Timedelta(days=60)).strftime("%Y-%m-%d")
-        ingest_prices(a.market, price_start)
+        ingest_prices(a.market, price_start, a.max_minutes)
 
 
 if __name__ == "__main__":

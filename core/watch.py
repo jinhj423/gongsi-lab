@@ -2,7 +2,7 @@
 
   python3 core/watch.py kr|us [--no-pull]
 
-새 공시를 피드에 쌓고(예측 사이클과 같은 journal/feed.jsonl), 그중
+새 공시를 피드에 쌓고(예측 사이클과 같은 state/feed.jsonl), 그중
   - config/my_watchlist.txt 의 관심종목 공시 (모든 유형)
   - config/schedule.json market_wide_alert_types 의 유형 (시장 전체)
 을 텔레그램으로 즉시 알린다. 같은 공시는 한 번만. 공시일 2일 이내만.
@@ -13,13 +13,13 @@ import argparse
 import datetime as dt
 import json
 
-from common import DATA, ROOT, out
+from common import ROOT, STATE, out
 import feed
 import ledger
 from classify import label
 import notify
 
-STATE = DATA / "watch-state.json"
+STATE_P = STATE / "watch-state.json"
 
 
 def watchlist() -> dict[tuple[str, str], str]:
@@ -53,7 +53,7 @@ def run(market: str, pull: bool) -> dict:
             feed.pull_kr(2)
         else:
             feed.pull_us(2, extra=[t for (m, t) in wl if m == "us"])
-    state = json.loads(STATE.read_text()) if STATE.exists() else {"alerted": []}
+    state = json.loads(STATE_P.read_text()) if STATE_P.exists() else {"alerted": []}
     alerted = set(state["alerted"])
     cutoff = (dt.date.today() - dt.timedelta(days=2)).isoformat()
     wide = market_wide(market)
@@ -74,8 +74,8 @@ def run(market: str, pull: bool) -> dict:
         ok = notify.send(f"📌 공시 알림 {len(hits)}건\n\n" + "\n\n".join(hits), kind="alert")
         if not ok:
             return {"alerts": len(hits), "sent": False}
-    STATE.parent.mkdir(parents=True, exist_ok=True)
-    STATE.write_text(json.dumps({"alerted": sorted(alerted)[-20000:]}))
+    STATE_P.parent.mkdir(parents=True, exist_ok=True)
+    STATE_P.write_text(json.dumps({"alerted": sorted(alerted)[-5000:]}))
     return {"alerts": len(hits), "sent": True}
 
 

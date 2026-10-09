@@ -116,7 +116,7 @@ def main() -> None:
     print("study ok")
 
     # ---- forward ledger
-    feed = root / "journal" / "feed.jsonl"
+    feed = root / "state" / "feed.jsonl"
     ev = {"event_id": "kr:test1", "market": "kr", "ticker": "000002", "name": "데모", "board": "K",
           "type": "buyback", "corr": False, "title": "자기주식취득결정", "filed_date": "2024-03-04",
           "filed_at": None, "source_id": "test1", "url": ""}

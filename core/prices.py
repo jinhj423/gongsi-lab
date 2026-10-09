@@ -1,7 +1,9 @@
 """Daily OHLCV cache + event windows. PROTECTED.
 
-KR: FinanceDataReader (pip install finance-datareader)
-US: yfinance (pip install yfinance), auto-adjusted.
+KR: FinanceDataReader(네이버) -> 실패 시 yfinance(.KS/.KQ)
+US: yfinance -> 실패 시 FinanceDataReader
+지수: KS11/KQ11 은 FDR(KRX) -> 실패 시 yfinance(^KS11/^KQ11)
+한 곳이 막혀도 다른 곳에서 받는다. 어느 쪽에서 받았는지는 $LAB_DATA/prices/sources.json.
 Cache: $LAB_DATA/prices/<market>/<ticker>.csv
 """
 from __future__ import annotations
@@ -39,18 +41,64 @@ def load(market: str, ticker: str) -> pd.DataFrame | None:
     return df
 
 
-def _fetch(market: str, ticker: str, start: str) -> pd.DataFrame:
-    if market == "kr":
-        import FinanceDataReader as fdr
-        df = fdr.DataReader(ticker, start)
-    else:
-        import yfinance as yf
-        df = yf.Ticker(ticker).history(start=start, auto_adjust=True)
-        if df.index.tz is not None:
-            df.index = df.index.tz_localize(None)
+YF_INDEX = {"KS11": "^KS11", "KQ11": "^KQ11"}
+
+
+def _norm(df: pd.DataFrame) -> pd.DataFrame:
+    if df is None or len(df) == 0:
+        raise ValueError("빈 데이터")
+    if getattr(df.index, "tz", None) is not None:
+        df.index = df.index.tz_localize(None)
     df.index = pd.to_datetime(df.index).normalize()
     df.index.name = "Date"
-    return df[[c for c in COLS if c in df.columns]]
+    df = df[[c for c in COLS if c in df.columns]]
+    if "Close" not in df.columns or "Open" not in df.columns:
+        raise ValueError("Open/Close 없음")
+    return df
+
+
+def _fdr(ticker: str, start: str) -> pd.DataFrame:
+    import FinanceDataReader as fdr
+    return _norm(fdr.DataReader(ticker, start))
+
+
+def _yf(symbol: str, start: str) -> pd.DataFrame:
+    import yfinance as yf
+    return _norm(yf.Ticker(symbol).history(start=start, auto_adjust=True))
+
+
+def _yf_kr(ticker: str, start: str) -> pd.DataFrame:
+    if ticker in YF_INDEX:
+        return _yf(YF_INDEX[ticker], start)
+    try:
+        return _yf(f"{ticker}.KS", start)
+    except Exception:  # noqa: BLE001
+        return _yf(f"{ticker}.KQ", start)
+
+
+def _fetch(market: str, ticker: str, start: str) -> pd.DataFrame:
+    chain = [("fdr", _fdr), ("yfinance", _yf_kr)] if market == "kr" else [("yfinance", _yf), ("fdr", _fdr)]
+    errs = []
+    for name, fn in chain:
+        try:
+            df = fn(ticker, start)
+            _note_source(market, ticker, name)
+            return df
+        except Exception as e:  # noqa: BLE001
+            errs.append(f"{name}: {str(e)[:120]}")
+    raise RuntimeError(" / ".join(errs))
+
+
+def _note_source(market: str, ticker: str, name: str) -> None:
+    import json
+    p = DATA / "prices" / "sources.json"
+    try:
+        d = json.loads(p.read_text()) if p.exists() else {}
+        d[f"{market}:{ticker}"] = name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(d))
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def update(market: str, ticker: str, start: str = "2015-01-01", max_age_hours: float = 12) -> pd.DataFrame | None:

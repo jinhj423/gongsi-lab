@@ -4,7 +4,7 @@
   python3 core/feed.py us [--days 3]      # SEC: strategy/universe_us.txt 종목들의 최근 8-K
   python3 core/feed.py list [--offline]   # 아직 예측 기록이 없는 관심 유형 후보
 
-새 이벤트는 journal/feed.jsonl 에 쌓인다(중복 제거). 후보는 strategy/watch.yaml 의
+새 이벤트는 state/feed.jsonl 에 쌓인다(중복 제거). 후보는 strategy/watch.yaml 의
 유형만, 정정공시 제외, 공시 후 7일 이내. 기저율은 일부러 보여주지 않는다 -
 추정치를 먼저 세우고 기록하라 (기록 후 출력에 나온다).
 """
@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import sys
 
 import yaml
@@ -68,6 +69,44 @@ def pull_us(days: int, extra: list[str] | None = None) -> list[dict]:
                 have[ev["event_id"]] = ev
                 new.append(ev)
     return new
+
+
+def tracked() -> set[tuple[str, str]]:
+    """Companies whose disclosures we keep forever: watchlist, forecasted, or with agent notes."""
+    from common import JOURNAL, ROOT
+    keep: set[tuple[str, str]] = set()
+    p = ROOT / "config" / "my_watchlist.txt"
+    if p.exists():
+        for ln in p.read_text(encoding="utf-8").splitlines():
+            parts = ln.split("#")[0].split()
+            if len(parts) >= 2 and parts[0] in ("kr", "us"):
+                keep.add((parts[0], parts[1].upper()))
+    for f in ledger.forecasts():
+        keep.add((f["market"], f["ticker"].upper()))
+    d = JOURNAL / "notes"
+    if d.exists():
+        for n in d.glob("*.md"):
+            if "-" in n.stem:
+                m, t = n.stem.split("-", 1)
+                keep.add((m, t.upper()))
+    return keep
+
+
+def prune(keep_days: int = 14) -> int:
+    """Drop old feed events of untracked companies. Returns removed count."""
+    if not ledger.FEED.exists():
+        return 0
+    cutoff = (dt.date.today() - dt.timedelta(days=keep_days)).isoformat()
+    keep = tracked()
+    rows = list(ledger.feed_events().values())
+    kept = [e for e in rows if e["filed_date"] >= cutoff or (e["market"], e["ticker"].upper()) in keep]
+    if len(kept) != len(rows):
+        tmp = ledger.FEED.with_suffix(".tmp")
+        with tmp.open("w", encoding="utf-8") as f:
+            for e in sorted(kept, key=lambda e: (e["filed_date"], e["event_id"])):
+                f.write(json.dumps(e, ensure_ascii=False) + "\n")
+        tmp.replace(ledger.FEED)
+    return len(rows) - len(kept)
 
 
 def candidates(offline: bool) -> list[dict]:

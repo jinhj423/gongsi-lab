@@ -1,0 +1,106 @@
+# 30분마다 깨어나서 할 일을 판단하고 처리한다 (core/tick.py).
+# 공시 감시·상태 보고는 가볍게, 예측/리서치(Claude)·옵시디언은 일정이 됐을 때만 설치해서 실행.
+name: tick
+
+on:
+  schedule:
+    - cron: "7,37 * * * *"        # UTC 기준 매시 07분·37분 (정각 혼잡 회피)
+  workflow_dispatch:
+  repository_dispatch:
+    types: [tick]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gongsi-lab
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      LAB_DATA: ${{ github.workspace }}/data
+      LAB_MODEL: ${{ vars.LAB_MODEL || 'sonnet' }}
+      LAB_MAX_TURNS: ${{ vars.LAB_MAX_TURNS || '80' }}
+      DART_API_KEY: ${{ secrets.DART_API_KEY }}
+      SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      OBSIDIAN_EMAIL: ${{ secrets.OBSIDIAN_EMAIL }}
+      OBSIDIAN_PASSWORD: ${{ secrets.OBSIDIAN_PASSWORD }}
+      OBSIDIAN_VAULT: ${{ secrets.OBSIDIAN_VAULT }}
+      OBSIDIAN_E2E_PASSWORD: ${{ secrets.OBSIDIAN_E2E_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install Python packages
+        run: pip install -q -r requirements.txt
+
+      - name: Git identity
+        run: |
+          git config user.name "gongsi-lab-bot"
+          git config user.email "gongsi-lab-bot@users.noreply.github.com"
+
+      - name: Restore data cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data
+          key: data-${{ github.run_id }}
+          restore-keys: data-
+
+      - name: Plan (텔레그램 명령 + 할 일 판단)
+        id: plan
+        run: python3 core/tick.py plan
+
+      - name: Install Claude Code
+        if: steps.plan.outputs.need_claude == 'true'
+        run: |
+          curl -fsSL https://claude.ai/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/setup-node@v4
+        if: steps.plan.outputs.need_ob == 'true'
+        with:
+          node-version: "22"
+
+      - name: Install Obsidian Headless
+        if: steps.plan.outputs.need_ob == 'true'
+        run: npm install -g obsidian-headless
+
+      - name: Run
+        run: python3 core/tick.py run
+
+      - name: Commit & push
+        if: always()
+        run: |
+          git add -A state journal strategy 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -qm "operator: tick $(date -u +%Y%m%d-%H%M)"
+          fi
+          for i in 1 2 3; do
+            git push -q origin HEAD:main && break
+            git pull -q --rebase origin main || { git rebase --abort; break; }
+          done
+
+      - name: Mark cache for saving
+        id: dirty
+        if: always()
+        run: |
+          if [ -f data/.dirty ]; then rm -f data/.dirty; echo "save=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Save data cache
+        if: always() && steps.dirty.outputs.save == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: data
+          key: data-${{ github.run_id }}

@@ -10,7 +10,7 @@
   `loop.sh`, `CLAUDE.md`, `README.md`, `.gitignore`)은 절대 수정하지 않는다.
   규칙이 틀렸다고 생각하면 `journal/proposals.md`에 근거와 함께 적는다.
   `loop.sh`가 보호 경로 변경을 되돌리고 경고를 남긴다.
-- `journal/feed.jsonl`, `forecasts.jsonl`, `resolutions.jsonl`, `trials.jsonl`은
+- `state/feed.jsonl`, `journal/forecasts.jsonl`, `resolutions.jsonl`, `trials.jsonl`은
   core 스크립트만 쓴다. 직접 편집 금지.
 - 기록하는 모든 확률은 너의 정직한 믿음이어야 한다. 보정도(Brier)가 측정되며,
   이를 게임하면 실험이 무의미해진다.

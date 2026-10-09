@@ -1,0 +1,48 @@
+# 옵시디언 계정에 2단계 인증을 쓰는 경우에만: 인증 앱의 6자리 코드를 넣고 실행 (코드가 바뀌기 전에 바로).
+# 로그인 토큰은 암호화되어 캐시에 저장되고, 이후로는 코드 없이 자동 로그인된다.
+name: obsidian-login
+
+on:
+  workflow_dispatch:
+    inputs:
+      mfa:
+        description: "2단계 인증 6자리 코드 (2단계 인증을 안 쓰면 비워두기)"
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gongsi-lab
+  cancel-in-progress: false
+
+jobs:
+  login:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      LAB_DATA: ${{ github.workspace }}/data
+      OBSIDIAN_EMAIL: ${{ secrets.OBSIDIAN_EMAIL }}
+      OBSIDIAN_PASSWORD: ${{ secrets.OBSIDIAN_PASSWORD }}
+      OBSIDIAN_VAULT: ${{ secrets.OBSIDIAN_VAULT }}
+      OBSIDIAN_MFA: ${{ inputs.mfa }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install -g obsidian-headless
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache/restore@v4
+        with:
+          path: data
+          key: data-${{ github.run_id }}
+          restore-keys: data-
+      - name: Login
+        run: rm -f data/obsidian-auth.enc && python3 core/obsync.py check
+      - uses: actions/cache/save@v4
+        with:
+          path: data
+          key: data-${{ github.run_id }}

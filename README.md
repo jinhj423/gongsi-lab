@@ -1,5 +1,8 @@
 # gongsi-lab — 공시 기반 매매 연구 실험
 
+> **처음이면 [START.md](START.md) 부터.** 사장님이 직접 하실 6단계만 정리되어 있습니다.
+> 운영은 GitHub Actions(권장, 서버·PC 불필요)로 돌아가고, 아래 6번의 서버 방식은 대안입니다.
+
 phil(Polymarket 자기개선 트레이더)의 구조를 한국(DART)·미국(SEC 8-K) 공시 매매에 옮긴 것.
 
 ```
@@ -146,7 +149,9 @@ python3 core/daemon.py once forecast   # 지금 바로 한 번
 **사용량**: 예측 사이클 하루 2회 + 리서치 주 1회 (기본 sonnet, 사이클당 최대 80턴). 공시 감시는 LLM 을 쓰지 않는다.
 Pro 한도에 걸리면 사이클이 실패로 보고되니 `LAB_MAX_TURNS` 를 줄이거나 오후 사이클만 남기면 된다.
 
-## 6. 서버에서 24시간 (PC 꺼도 됨)
+## 6. (대안) 내 서버에서 24시간
+
+기본은 GitHub Actions(START.md)다. 서버를 따로 운영하고 싶을 때만 아래를 따른다.
 
 **서버 고르기** (Claude Code 는 RAM 4GB 이상 권장, ARM64 지원):
 
