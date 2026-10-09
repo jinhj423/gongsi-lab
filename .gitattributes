@@ -1,0 +1,9 @@
+# Windows 에서 받아도 셸 스크립트가 WSL/서버에서 돌도록 LF 고정
+* text=auto
+*.sh text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.txt text eol=lf
+*.bat text eol=crlf
