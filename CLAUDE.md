@@ -27,3 +27,11 @@
 - 텔레그램은 `TELEGRAM_BOT_TOKEN` 만 시크릿, 방·토픽은 `/setup` 으로 `state/telegram.json` 에 자동 등록 (`core/tgsetup.py`).
 - 옵시디언은 `core/obsync.py` (Obsidian Headless, 노트만 동기화, 토큰은 암호화해 캐시에).
 - 과거 데이터는 매일 밤 `core/backfill.py` 가 시간 예산 안에서 조금씩 채운다.
+
+## 매매 후보 (주 목적)
+- `core/universe.py` 시총 상위 → `core/fundamentals.py` 분기 실적(DART fnlttMultiAcnt / SEC frames) → `core/screen.py`
+  추세·점수·필수조건·섹터 비교 → `journal/candidates.jsonl` → `core/candscore.py` 사후 채점.
+- `core/candidates.py run` 이 텔레그램 숫자 카드(+chart-img 차트), 직원은 `CANDIDATES.md` 로 신규 후보 리포트(사용자 양식 0~7).
+- 가중치·필수조건은 `strategy/screen.yaml` (직원이 근거로 조정), 대상 규모는 `config/screen.json` (운영자).
+- 섹터: KR 은 KRX-DESC 의 `Industry` 열(KSIC 업종명; `Sector` 열은 거의 비어 있음)을 `config/sector_overrides.yaml` 로 묶음, US 는 GICS.
+- KRX 휴장일 목록 파일은 시총이 '-' 로 온다 → 유효한 최근 거래일 파일로 대체 (`universe._valid`).

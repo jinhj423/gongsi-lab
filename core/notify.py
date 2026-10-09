@@ -133,6 +133,32 @@ def send(text: str, silent: bool = False, kind: str = "report", thread: int | No
         return False
 
 
+def send_photo(png: bytes, caption: str = "", kind: str = "report") -> bool:
+    if is_agent():
+        die("에이전트는 직접 알림을 보낼 수 없습니다.")
+    c = conf()
+    if os.environ.get("LAB_TELEGRAM_DRYRUN") == "1" or not c or not c.get("chat_id"):
+        p = DATA / "notify-dryrun.log"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a", encoding="utf-8") as f:
+            f.write(f"----- {time.strftime('%Y-%m-%d %H:%M:%S')} [{kind}] [photo {len(png)} bytes]\n{caption}\n")
+        return True
+    import requests
+    data = {"chat_id": c["chat_id"], "caption": caption[:1000]}
+    tid = thread_for(kind, c)
+    if tid:
+        data["message_thread_id"] = tid
+    try:
+        r = requests.post(f"https://api.telegram.org/bot{c['token']}/sendPhoto", data=data,
+                          files={"photo": ("chart.png", png, "image/png")}, timeout=60)
+        if not r.json().get("ok"):
+            raise RuntimeError(r.json().get("description"))
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"[notify] 사진 발송 실패: {e}", file=sys.stderr)
+        return False
+
+
 def footer() -> str:
     """Numbers computed by core, appended to every agent report so they cannot be misreported."""
     import ledger
@@ -173,7 +199,8 @@ def send_outbox() -> int:
             log = subprocess.run(["git", "log", "--since=7.days", "--pretty=- %s", "--", "strategy/"],
                                  cwd=JOURNAL.parent, capture_output=True, text=True).stdout.strip()
             extra = "\n\n── 최근 7일 전략 변경 (git) ──\n" + (log or "없음")
-        if send(body + extra + "\n" + footer()):
+        tail = "" if "candidates" in p.name else "\n" + footer()
+        if send(body + extra + tail):
             p.rename(sent_dir / p.name)
             n += 1
     return n

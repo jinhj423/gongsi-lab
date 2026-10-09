@@ -4,6 +4,7 @@
 
 새 공시를 피드에 쌓고(예측 사이클과 같은 state/feed.jsonl), 그중
   - config/my_watchlist.txt 의 관심종목 공시 (모든 유형)
+  - 현재 매매 후보(state/screen-<market>.json) 종목의 공시
   - config/schedule.json market_wide_alert_types 의 유형 (시장 전체)
 을 텔레그램으로 즉시 알린다. 같은 공시는 한 번만. 공시일 2일 이내만.
 """
@@ -46,8 +47,16 @@ def fmt(e: dict, why: str) -> str:
             f"   {why} · {when} · {e.get('url', '')}")
 
 
+def current_candidates(market: str) -> dict[tuple[str, str], str]:
+    p = STATE / f"screen-{market}.json"
+    if not p.exists():
+        return {}
+    s = json.loads(p.read_text(encoding="utf-8"))
+    return {(market, c["ticker"].upper()): f"매매 후보 {c['rank']}위" for c in s.get("candidates", [])}
+
+
 def run(market: str, pull: bool) -> dict:
-    wl = watchlist()
+    wl = {**current_candidates(market), **watchlist()}
     if pull:
         if market == "kr":
             feed.pull_kr(2)
@@ -64,7 +73,7 @@ def run(market: str, pull: bool) -> dict:
         why = None
         if (market, e["ticker"].upper()) in wl:
             memo = wl[(market, e["ticker"].upper())]
-            why = "관심종목" + (f"({memo})" if memo and memo != e.get("name") else "")
+            why = memo if memo.startswith("매매 후보") else "관심종목" + (f"({memo})" if memo and memo != e.get("name") else "")
         elif e["type"] in wide:
             why = f"시장전체:{label(e['type'])}"
         if why:

@@ -73,7 +73,7 @@ def pull_us(days: int, extra: list[str] | None = None) -> list[dict]:
 
 def tracked() -> set[tuple[str, str]]:
     """Companies whose disclosures we keep forever: watchlist, forecasted, or with agent notes."""
-    from common import JOURNAL, ROOT
+    from common import JOURNAL, ROOT, read_jsonl
     keep: set[tuple[str, str]] = set()
     p = ROOT / "config" / "my_watchlist.txt"
     if p.exists():
@@ -83,8 +83,11 @@ def tracked() -> set[tuple[str, str]]:
                 keep.add((parts[0], parts[1].upper()))
     for f in ledger.forecasts():
         keep.add((f["market"], f["ticker"].upper()))
-    d = JOURNAL / "notes"
-    if d.exists():
+    for c in read_jsonl(JOURNAL / "candidates.jsonl"):
+        keep.add((c["market"], c["ticker"].upper()))
+    for d in (JOURNAL / "notes", JOURNAL / "reports"):
+        if not d.exists():
+            continue
         for n in d.glob("*.md"):
             if "-" in n.stem:
                 m, t = n.stem.split("-", 1)

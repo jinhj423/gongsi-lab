@@ -36,14 +36,14 @@ def main() -> None:
     (root / "state").mkdir(exist_ok=True)
     (root / "state" / "sectors.json").write_text(json.dumps({
         "kr": {"005930": {"sector": "통신 및 방송 장비 제조업", "industry": "반도체, 휴대폰", "name": "삼성전자"},
-               "247540": {"sector": "일차전지 및 축전지 제조업", "industry": "양극재", "name": "에코프로비엠"},
+               "247540": {"sector": "일차전지 및 이차전지 제조업", "industry": "양극재", "name": "에코프로비엠"},
                "035420": {"sector": "자료처리, 호스팅, 포털 및 기타 인터넷 정보매개 서비스업", "industry": "포털", "name": "NAVER"}},
         "us": {"NVDA": {"sector": "Semiconductors & Related Devices", "industry": "3674", "name": "NVIDIA CORP"}},
         "kr_refreshed": 9e12}, ensure_ascii=False), encoding="utf-8")
     import sectors
     assert sectors.lookup("kr", "005930")["sector"] == "반도체"            # per-ticker override wins
     assert sectors.lookup("kr", "247540")["sector"] == "2차전지"           # rename
-    assert sectors.lookup("us", "nvda")["sector"] == "Semiconductors"
+    assert sectors.lookup("us", "nvda")["sector"] == "Semiconductors & Related Devices"  # US 는 이름 그대로
     assert sectors.lookup("kr", "999999")["sector"] == "미분류"
     print("sectors ok")
 
@@ -92,7 +92,7 @@ def main() -> None:
     eco = base / "섹터" / "2차전지" / "에코프로비엠 (247540).md"
     sam = base / "섹터" / "반도체" / "삼성전자 (005930).md"
     assert eco.exists() and sam.exists() and (base / "섹터" / "2차전지" / "섹터 - 2차전지.md").exists()
-    assert (base / "섹터" / "Semiconductors" / "NVIDIA CORP (NVDA).md").exists()
+    assert (base / "섹터" / "Semiconductors & Related Devices" / "NVIDIA CORP (NVDA).md").exists()
     assert not list(base.rglob("관계없는회사*")), "non-tracked company got a note"
     t = eco.read_text(encoding="utf-8")
     assert "[[섹터 - 2차전지]]" in t and "+7.0%" in t and "✅" in t and "+22,950" in t and "단일판매·공급계약" in t and "대기" in t

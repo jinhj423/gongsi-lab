@@ -62,6 +62,30 @@
       "at": "02:10"
     },
     {
+      "name": "candidates-kr",
+      "run": "candidates kr",
+      "days": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "at": "16:10"
+    },
+    {
+      "name": "candidates-us",
+      "run": "candidates us",
+      "days": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "at": "07:00"
+    },
+    {
       "name": "forecast-kr",
       "run": "forecast",
       "days": [

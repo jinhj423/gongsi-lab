@@ -1,0 +1,24 @@
+# AGENT-EDITABLE. 시총 상위 기업 비교 점수 (core/screen.py 가 읽음).
+# 바꿀 때는 journal/research/ 메모에 후보 원장 성적(core/candscore.py)을 근거로 남길 것. 주 1회, 한 항목씩.
+# 점수 = 각 항목의 시장 내 백분위(0~100) x 가중치 합 / 가중치 합.
+
+# 필수 조건 (못 넘으면 후보에서 제외, '주의'로만 표시될 수 있음)
+gates:
+  above_sma200: true        # 종가가 일봉 SMA200 위 (대추세 상승)
+  sma200_rising: true       # SMA200 이 20일 전보다 높음
+  op_yoy_min: 0.0           # 최신 분기 영업이익 전년동기 대비 증가율 하한 (null 이면 미적용)
+  min_traded_value:         # 최근 20일 평균 거래대금 하한
+    kr: 5000000000      # 50억 원
+    us: 50000000        # 5천만 달러
+
+weights:
+  op_yoy: 25          # 영업이익 YoY
+  rev_yoy: 15         # 매출 YoY
+  op_margin_chg: 10   # 영업이익률 변화 (전년동기 대비)
+  ema_align: 15       # 일봉 EMA 20/60/112/224 정배열 정도
+  rs_126: 20          # 6개월 지수 대비 초과수익
+  rs_63: 10           # 3개월 지수 대비 초과수익
+  near_high: 5        # 52주 고점 근접도
+
+# 섹터 비교: 같은 섹터 안 순위도 함께 보고 (섹터 상위 1/3 이면 가산)
+sector_bonus: 5

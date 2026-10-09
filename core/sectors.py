@@ -43,21 +43,48 @@ def _pick(cols, *names):
     return None
 
 
+DESC_CACHE = "https://raw.githubusercontent.com/FinanceData/fdr_krx_data_cache/refs/heads/master/data/listing/desc/{d}.csv"
+
+
+def _kr_desc():
+    """KRX 종목 설명 목록. FDR -> 실패 시 FinanceData 의 GitHub 캐시(가끔 갱신, 최근 120일 안의 최신 파일)."""
+    import datetime as dt
+    import pandas as pd
+    try:
+        import FinanceDataReader as fdr
+        df = fdr.StockListing("KRX-DESC")
+        if len(df):
+            return df
+    except Exception:  # noqa: BLE001
+        pass
+    for k in range(0, 120):
+        d = (dt.date.today() - dt.timedelta(days=k)).isoformat()
+        try:
+            return pd.read_csv(DESC_CACHE.format(d=d), index_col=0, dtype={"Code": str})
+        except Exception:  # noqa: BLE001
+            continue
+    raise RuntimeError("KRX 업종 목록을 받지 못함")
+
+
 def refresh_kr() -> int:
-    import FinanceDataReader as fdr
-    df = fdr.StockListing("KRX-DESC")
+    df = _kr_desc()
     code = _pick(df.columns, "Code", "Symbol", "종목코드")
-    sec = _pick(df.columns, "Sector", "업종")
-    ind = _pick(df.columns, "Industry", "주요제품")
+    ind = _pick(df.columns, "Industry", "업종")   # KSIC 기반 업종명 (실제 값은 Industry 열에 있음)
+    sec = _pick(df.columns, "Sector")             # 대부분 비어 있음
+    prod = _pick(df.columns, "Products", "주요제품")
     name = _pick(df.columns, "Name", "종목명")
-    if not code or not sec:
+    if not code or not ind:
         raise RuntimeError(f"KRX-DESC 컬럼을 알 수 없음: {list(df.columns)}")
+
+    def val(r, col):
+        return str(r[col]) if col and r[col] == r[col] and str(r[col]).strip() else ""
     c = _load()
     for _, r in df.iterrows():
+        industry = val(r, ind) or val(r, sec)
         c["kr"][str(r[code]).zfill(6)] = {
-            "sector": str(r[sec]) if r[sec] == r[sec] and r[sec] else UNKNOWN,
-            "industry": str(r[ind]) if ind and r[ind] == r[ind] and r[ind] else "",
-            "name": str(r[name]) if name else "",
+            "sector": industry or UNKNOWN,
+            "industry": val(r, prod)[:60],
+            "name": val(r, name),
         }
     c["kr_refreshed"] = time.time()
     _save(c)
@@ -74,16 +101,21 @@ def fetch_us(ticker: str) -> dict | None:
     return {"sector": j.get("sicDescription") or UNKNOWN, "industry": str(j.get("sic") or ""), "name": j.get("name", "")}
 
 
+_failed: set[str] = set()  # 이번 실행에서 이미 실패한 조회는 다시 시도하지 않는다
+
+
 def lookup(market: str, ticker: str, network: bool = False) -> dict:
     """{'sector', 'industry', 'name'} with operator overrides applied. Never raises."""
     c = _load()
     t = ticker.upper() if market == "us" else ticker.zfill(6)
     rec = c.get(market, {}).get(t)
-    if rec is None and network:
+    if rec is None and network and (market == "us" or "kr" not in _failed):
         try:
             if market == "kr":
                 if time.time() - c.get("kr_refreshed", 0) > 3600:
+                    _failed.add("kr")  # 성공하면 아래에서 지움
                     refresh_kr()
+                    _failed.discard("kr")
             else:
                 got = fetch_us(t)
                 if got:

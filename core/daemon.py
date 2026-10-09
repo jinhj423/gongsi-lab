@@ -148,6 +148,19 @@ def run_job(run: str, timeout_min: int) -> tuple[bool, str]:
         cmd = ["bash", str(ROOT / "loop.sh"), parts[0]]
     elif parts[0] == "watch":
         cmd = [sys.executable, str(ROOT / "core" / "watch.py"), parts[1]]
+    elif parts[0] == "candidates":
+        m = parts[1] if len(parts) > 1 else "kr"
+        p = subprocess.run([sys.executable, str(ROOT / "core" / "candidates.py"), "run", m], cwd=ROOT, env=env,
+                           capture_output=True, text=True, timeout=timeout_min * 60)
+        if p.returncode != 0:
+            return False, (p.stdout[-600:] + "\n" + p.stderr[-900:]).strip()
+        try:
+            if not json.loads(p.stdout).get("new"):
+                return True, "신규 후보 없음 - 리포트 생략"  # Claude 사용량 절약
+        except ValueError:
+            pass
+        cmd = ["bash", str(ROOT / "loop.sh"), "candidates"]
+        env["LAB_MARKET"] = m
     elif parts[0] == "vault":
         cmd = [sys.executable, str(ROOT / "core" / "vault.py"), "export"]
     elif parts[0] == "ingest":

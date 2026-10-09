@@ -20,7 +20,7 @@ import daemon
 import notify
 import tgsetup
 
-HEAVY = ("forecast", "research")
+HEAVY = ("forecast", "research", "candidates")
 
 
 def features() -> dict[str, str | None]:
@@ -39,6 +39,9 @@ def blocked(run: str, f: dict, for_plan: bool = False) -> str | None:
     kind = run.split()[0]
     if kind == "watch":
         return f["kr"] if run.endswith("kr") else f["us"]
+    if kind == "candidates":
+        mk = run.split()[1] if len(run.split()) > 1 else "kr"
+        return f[mk] or f["claude"] or (None if for_plan else f["claude_cli"])
     if kind in HEAVY:
         return f["claude"] or f["kr"] or (None if for_plan else f["claude_cli"])
     if kind == "vault":
@@ -67,7 +70,7 @@ def due_jobs(now: dt.datetime) -> list[dict]:
 
 # ---------------------------------------------------------------- telegram commands
 
-HELP = ("명령: /status 상태 · /note <메모> · /run forecast|research|watch|vault|ingest · /pause · /resume · /log\n"
+HELP = ("명령: /status 상태 · /top (또는 /후보) 오늘 후보 · /note <메모> · /run 후보|kr|us|forecast|research · /pause · /resume · /log\n"
         "/note 메모는 다음 사이클 직원이 읽고 반영합니다. 명령은 30분 이내에 처리됩니다.")
 
 
@@ -89,6 +92,15 @@ def handle(text: str, thread: int | None) -> str:
     cmd = cmd.split("@")[0].lower()
     if cmd == "/status":
         return status_text()
+    if cmd in ("/후보", "/top", "/candidates"):
+        import candidates
+        import screen
+        parts = []
+        for m in ("kr", "us"):
+            res = screen.load(m)
+            if res:
+                parts.append(candidates.card(res))
+        return "\n\n".join(parts) or "아직 후보 스크리닝 결과가 없습니다. /run 후보 로 지금 실행할 수 있습니다."
     if cmd == "/note":
         if not arg.strip():
             return "사용법: /note 이번 주는 2차전지 공시는 보수적으로"
@@ -97,9 +109,10 @@ def handle(text: str, thread: int | None) -> str:
     if cmd == "/run":
         what = arg.strip() or "forecast"
         runs = {"forecast": ["forecast"], "research": ["research"], "vault": ["vault"], "ingest": ["ingest"],
-                "watch": ["watch kr", "watch us"]}.get(what)
+                "watch": ["watch kr", "watch us"], "candidates": ["candidates kr", "candidates us"],
+                "후보": ["candidates kr", "candidates us"], "kr": ["candidates kr"], "us": ["candidates us"]}.get(what)
         if not runs:
-            return "사용법: /run forecast|research|watch|vault|ingest"
+            return "사용법: /run 후보 | kr | us | forecast | research | watch | vault | ingest"
         st = daemon.load_state()
         for r in runs:
             st.setdefault("pending_runs", {})[f"manual-{r.replace(' ', '-')}"] = r
@@ -179,7 +192,7 @@ def plan() -> dict:
 def run() -> dict:
     tz = ZoneInfo(daemon.schedule()["timezone"])
     f = features()
-    order = {"watch": 0, "status": 1, "ingest": 2, "forecast": 3, "research": 4, "vault": 5}
+    order = {"watch": 0, "status": 1, "ingest": 2, "candidates": 3, "forecast": 4, "research": 5, "vault": 6}
     jobs = sorted(due_jobs(dt.datetime.now(tz)), key=lambda j: order.get(j["run"].split()[0], 9))
     done, skipped = [], []
     ran_cycle = False

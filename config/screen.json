@@ -1,0 +1,21 @@
+{
+  "_comment": "PROTECTED. 시총 상위 기업 비교·후보 발굴 설정 (운영자). 점수 가중치는 strategy/screen.yaml (직원이 증거로 조정).",
+  "universe": {
+    "kr_top": 200,
+    "us_top": 100,
+    "kr_markets": ["KOSPI", "KOSDAQ", "KOSDAQ GLOBAL"],
+    "exclude_preferred": true,
+    "exclude_name_contains": ["스팩", "리츠"]
+  },
+  "candidates_per_market": 10,
+  "new_reports_per_run": 3,
+  "horizons": [20, 60],
+  "fundamentals_max_age_days": 3,
+  "chart": {
+    "_comment": "CHART_IMG_API_KEY 시크릿이 있으면 신규 후보마다 트레이딩뷰 일봉 차트를 텔레그램에 첨부 (chart-img.com BASIC: 하루 50장)",
+    "interval": "1D",
+    "width": 800,
+    "height": 500,
+    "theme": "dark"
+  }
+}

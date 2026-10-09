@@ -27,7 +27,7 @@ import sys
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from common import JOURNAL, ROOT, STATE, die, is_agent, out
+from common import JOURNAL, ROOT, STATE, die, is_agent, out, read_jsonl
 import ledger
 import sectors
 from classify import label
@@ -109,6 +109,40 @@ def agent_notes() -> dict[tuple[str, str], str]:
     return res
 
 
+def agent_reports() -> dict[tuple[str, str], str]:
+    d = JOURNAL / "reports"
+    res = {}
+    if d.exists():
+        for p in d.glob("*.md"):
+            m = re.match(r"(kr|us)-(.+)\.md$", p.name)
+            if m:
+                body = p.read_text(encoding="utf-8")
+                body = re.sub(r"\A#\s+[^\n]*\n", "", body).strip()
+                body = re.sub(r"(?m)^## ", "### ", body)
+                res[(m.group(1), m.group(2).upper() if m.group(1) == "us" else m.group(2).zfill(6))] = body
+    return res
+
+
+def screen_rows() -> dict[tuple[str, str], dict]:
+    """최신 스크리닝 결과 (후보 + 전체 순위)."""
+    res = {}
+    for m in ("kr", "us"):
+        p = STATE / f"screen-{m}.json"
+        if p.exists():
+            s = json.loads(p.read_text(encoding="utf-8"))
+            cands = {c["ticker"] for c in s.get("candidates", [])}
+            for r in s.get("all", []):
+                res[(m, r["ticker"])] = {**r, "is_candidate": r["ticker"] in cands, "asof": s.get("asof")}
+    return res
+
+
+def candidate_tickers() -> set[tuple[str, str]]:
+    keep = set()
+    for c in read_jsonl(JOURNAL / "candidates.jsonl"):
+        keep.add((c["market"], c["ticker"].upper() if c["market"] == "us" else c["ticker"]))
+    return keep
+
+
 def score(rows: list[tuple[dict, dict | None]]) -> dict:
     done = [(f, r) for f, r in rows if r and r.get("status") == "ok"]
     d = {"n": len(rows), "resolved": len(done)}
@@ -132,8 +166,10 @@ def build(vault: Path, c: dict) -> dict:
     res = ledger.resolutions()
     wl = watchlist()
     notes = agent_notes()
+    reports = agent_reports()
+    scr = screen_rows()
 
-    comps: set[tuple[str, str]] = set(wl) | set(notes)
+    comps: set[tuple[str, str]] = set(wl) | set(notes) | set(reports) | candidate_tickers()
     for f in fc:
         comps.add((f["market"], f["ticker"].upper() if f["market"] == "us" else f["ticker"]))
 
@@ -152,7 +188,9 @@ def build(vault: Path, c: dict) -> dict:
     for k in comps:
         m, t = k
         sec = sectors.lookup(m, t, network=True)
-        name = (sec.get("name") or next((e.get("name") for e in by_comp_ev.get(k, []) if e.get("name")), "")
+        if (m, t) in scr and scr[(m, t)].get("sector") and (m == "us" or sec["sector"] == sectors.UNKNOWN):
+            sec = {**sec, "sector": scr[(m, t)]["sector"]}  # 미국은 S&P500 의 GICS 섹터를 우선
+        name = ((scr.get((m, t)) or {}).get("name") or sec.get("name") or next((e.get("name") for e in by_comp_ev.get(k, []) if e.get("name")), "")
                 or next((f.get("name") for f, _ in by_comp_fc.get(k, []) if f.get("name")), "") or wl.get(k, "") or t)
         info[k] = {"name": name, "sector": safe(sec["sector"]), "raw_sector": sec.get("raw_sector", ""),
                    "industry": sec.get("industry", ""), "note": safe(f"{name} ({t})")}
@@ -181,9 +219,21 @@ def build(vault: Path, c: dict) -> dict:
             f"# {inf['name']} ({t})", "",
             f"섹터: [[섹터 - {inf['sector']}]] · {'관심종목 · ' if k in wl else ''}{inf['industry']}",
             "",
-            "## 예측 기록", "",
-            fmt_score(score(rows)), "",
         ]
+        sr = scr.get(k)
+        if sr:
+            per_s = f"{sr['per']:.1f}" if sr.get("per") else "-"
+            L += [f"## 시총 상위 비교 ({sr.get('asof')} 기준)" + (" · 🟢 현재 매매 후보" if sr.get("is_candidate") else ""), "",
+                  "| 점수 | 시장 순위 | 섹터 순위 | 영업이익 YoY | 매출 YoY | 6M 지수대비 | 정배열 | SMA200 | PER |",
+                  "|---|---|---|---|---|---|---|---|---|",
+                  f"| {sr.get('score', '')} | {sr.get('rank', '')} | {sr.get('sector_rank', '')} | {pct(sr.get('op_yoy'))} | "
+                  f"{pct(sr.get('rev_yoy'))} | {pct(sr.get('rs_126'))} | {sr.get('ema_align', '-')}/4 | "
+                  f"{'위' if sr.get('above_sma200') else '아래'} | {per_s} |", ""]
+            if sr.get("gate_fails"):
+                L += ["후보 제외 사유: " + ", ".join(sr["gate_fails"]), ""]
+        if k in reports:
+            L += ["## 후보 리포트", "", reports[k], ""]
+        L += ["## 예측 기록", "", fmt_score(score(rows)), ""]
         if rows:
             L += ["| 기록일 | 공시 | 지평 | 예측 | 기저율 | 결과(초과수익) | 판정 | 페이퍼 |",
                   "|---|---|---|---|---|---|---|---|"]
@@ -252,18 +302,20 @@ def build(vault: Path, c: dict) -> dict:
             text = re.sub(pat, f"[[{inf['note']}|{inf['name']}({k[1]})]]", text)
         return text
 
-    reports = []
+    report_titles = []
     sent = JOURNAL / "outbox" / "sent"
     for p in sorted(sent.glob("*.md")) if sent.exists() else []:
-        mt = re.match(r"(\d{8})-(\d{4})-?(\w*)\.md$", p.name)
+        mt = re.match(r"(\d{8})-(\d{4})-?([\w-]*)\.md$", p.name)
         if not mt:
             continue
         t_utc = dt.datetime.strptime(mt.group(1) + mt.group(2), "%Y%m%d%H%M").replace(tzinfo=dt.timezone.utc)
         t = t_utc.astimezone(KST)
-        kind = {"forecast": "예측 보고", "research": "주간 리서치 보고"}.get(mt.group(3), "보고")
+        kind = {"forecast": "예측 보고", "research": "주간 리서치 보고"}.get(mt.group(3), "후보 리포트" if "candidates" in p.name else "보고")
+        if "candidates" in p.name:
+            kind += " (국내)" if p.name.endswith("-kr.md") else " (미국)" if p.name.endswith("-us.md") else ""
         title = f"{t:%Y-%m-%d %H%M} {kind}"
         dest = root / "보고" / f"{t:%Y-%m}" / f"{title}.md"
-        reports.append(title)
+        report_titles.append(title)
         if not dest.exists():
             dest.parent.mkdir(parents=True, exist_ok=True)
             dest.write_text(f"---\ntags: [공시랩, 보고]\nkind: {kind}\nsent: {t:%Y-%m-%d %H:%M}\n---\n"
@@ -286,13 +338,25 @@ def build(vault: Path, c: dict) -> dict:
         L += ["", "## 보유 중인 페이퍼 포지션", ""]
         for f, k in sorted(open_bets, key=lambda x: x[0]["recorded_at"], reverse=True):
             L.append(f"- [[{info[k]['note']}]] {label(f['type'])} · 예측 {f['est_prob']:.2f} · {f['stake']:,.0f} · 기록 {f['recorded_at'][:10]}")
-    L += ["", "## 최근 보고", ""] + [f"- [[{t}]]" for t in reversed(reports[-10:])]
+    for m, lab in (("kr", "국내"), ("us", "미국")):
+        sp = STATE / f"screen-{m}.json"
+        if not sp.exists():
+            continue
+        s = json.loads(sp.read_text(encoding="utf-8"))
+        L += ["", f"## 매매 후보 · {lab} ({s.get('asof')} 기준)", "",
+              "| 순위 | 기업 | 섹터 | 점수 | 영업이익 YoY | 6M 지수대비 | 신규 |", "|---|---|---|---|---|---|---|"]
+        for c2 in s.get("candidates", []):
+            kk = (m, c2["ticker"])
+            nm = f"[[{info[kk]['note']}]]" if kk in info else f"{c2['name']} ({c2['ticker']})"
+            L.append(f"| {c2['rank']} | {nm} | {cell(c2.get('sector'))} | {c2['score']} | {pct(c2.get('op_yoy'))} | "
+                     f"{pct(c2.get('rs_126'))} | {'🆕' if c2.get('is_new') else ''} |")
+    L += ["", "## 최근 보고", ""] + [f"- [[{t}]]" for t in reversed(report_titles[-10:])]
     (root / "대시보드.md").parent.mkdir(parents=True, exist_ok=True)
     (root / "대시보드.md").write_text("\n".join(L) + "\n", encoding="utf-8")
 
     INDEX.parent.mkdir(parents=True, exist_ok=True)
     INDEX.write_text(json.dumps(new_index, ensure_ascii=False, indent=1), encoding="utf-8")
-    return {"companies": written, "sectors": len(by_sector), "reports": len(reports), "root": str(root)}
+    return {"companies": written, "sectors": len(by_sector), "reports": len(report_titles), "root": str(root)}
 
 
 def main() -> None:

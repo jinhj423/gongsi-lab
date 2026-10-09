@@ -37,7 +37,7 @@ def _requests():
 def dart_key() -> str:
     k = secret("DART_API_KEY", "dart-key")
     if not k:
-        die("DART_API_KEY 가 없습니다. opendart.fss.or.kr 에서 발급 후 환경변수나 ~/.config/gongsi-lab/dart-key 에 저장하세요.")
+        raise SourceError("DART_API_KEY 가 없습니다. opendart.fss.or.kr 에서 발급 후 GitHub Secrets(또는 ~/.config/gongsi-lab/dart-key)에 넣으세요.")
     return k
 
 
@@ -119,7 +119,7 @@ def dart_document_text(rcept_no: str) -> str:
 def sec_get(url: str):
     ua = secret("SEC_USER_AGENT", "sec-user-agent")
     if not ua:
-        die("SEC_USER_AGENT 가 없습니다. 예: export SEC_USER_AGENT='Hong Gildong you@example.com'")
+        raise SourceError("SEC_USER_AGENT 가 없습니다 (미국 공시는 꺼진 상태). 예: 'Hong Gildong you@example.com'")
     rq = _requests()
     time.sleep(0.12)  # SEC 공정사용: 초당 10건 이하
     r = rq.get(url, headers={"User-Agent": ua, "Accept-Encoding": "gzip, deflate"}, timeout=30)

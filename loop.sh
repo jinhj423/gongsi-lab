@@ -15,7 +15,8 @@ SLEEP_MIN="${3:-60}"
 case "$MODE" in
   forecast) PROMPT_FILE=CYCLE.md ;;
   research) PROMPT_FILE=RESEARCH.md ;;
-  *) echo "usage: ./loop.sh forecast|research [cycles] [sleep_min]" >&2; exit 2 ;;
+  candidates) PROMPT_FILE=CANDIDATES.md ;;
+  *) echo "usage: ./loop.sh forecast|research|candidates [cycles] [sleep_min]" >&2; exit 2 ;;
 esac
 
 LOCK=".loop.pid"
@@ -31,8 +32,8 @@ fi
 command -v claude >/dev/null || { echo "ERROR: claude CLI 가 PATH 에 없습니다" >&2; exit 1; }
 git rev-parse --git-dir >/dev/null 2>&1 || { echo "ERROR: git 저장소가 아닙니다 (git init 먼저)" >&2; exit 1; }
 
-PROTECTED=(core/ config/ deploy/ .github/ CYCLE.md RESEARCH.md START.md loop.sh CLAUDE.md README.md .gitignore .gitattributes tests/ requirements.txt)
-APPEND_ONLY=(journal/forecasts.jsonl journal/resolutions.jsonl journal/trials.jsonl journal/holdout-log.jsonl)
+PROTECTED=(core/ config/ deploy/ .github/ CYCLE.md RESEARCH.md CANDIDATES.md START.md loop.sh CLAUDE.md README.md .gitignore .gitattributes tests/ requirements.txt)
+APPEND_ONLY=(journal/candidates.jsonl journal/candidate-results.jsonl journal/forecasts.jsonl journal/resolutions.jsonl journal/trials.jsonl journal/holdout-log.jsonl)
 
 holdout_lines() { if [ -f journal/holdout-log.jsonl ]; then wc -l < journal/holdout-log.jsonl; else echo 0; fi; }
 WARNS=()
